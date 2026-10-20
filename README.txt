@@ -12,3 +12,5 @@ CÓMO USAR DESDE EL MÓVIL
 IMPORTANTE
 No se puede instalar como PWA directamente abriendo index.html desde el ZIP:
 para una instalación correcta, debe servirse desde una dirección HTTPS.
+
+Versión 0.2: se añadieron accesos a Google Maps para ida/vuelta y a los mapas oficiales de tráfico del Servei Català de Trànsit. El tiempo estimado se consulta en Maps; todavía no se calcula dentro de Mi Día.
