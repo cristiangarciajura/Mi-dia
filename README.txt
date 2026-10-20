@@ -1,30 +1,28 @@
-MI DÍA V3 — guía rápida
+MI DÍA V4 — INSTALACIÓN
 
-ARCHIVOS DE ESTA CARPETA
-- index.html: aplicación principal.
-- sw.js: caché/offline de la PWA.
-- manifest.webmanifest: configuración de instalación.
-- icon.svg: icono.
-- backup-v2/: copia de los archivos originales consultados en el repositorio.
+Incluye:
+- Meteorología por horas mediante Open-Meteo (sin clave API).
+- Estimación de ruta por carretera mediante OSRM, sin tráfico en tiempo real.
+- Enlaces a Google Maps y a incidencias oficiales del Servei Català de Trànsit.
+- Próximos partidos publicados para Real Madrid y RCD Espanyol, con enlaces a calendarios oficiales. Los horarios pueden cambiar; compruébalos en los enlaces.
+- Notas guardadas en el navegador del móvil.
+- Copias de seguridad completas de v2 y v3.
 
-CÓMO PUBLICAR DESDE EL MÓVIL
-1. Abre https://github.com/cristiangarciajura/Mi-dia
-2. Antes de reemplazar archivos, descarga el ZIP de la versión actual desde Code > Download ZIP.
-3. En el repositorio, abre index.html > lápiz Edit > reemplaza todo el contenido por el index.html de esta carpeta. Repite con sw.js, manifest.webmanifest e icon.svg.
-4. Pulsa Commit changes.
-5. Espera a que GitHub Pages publique y abre https://cristiangarciajura.github.io/Mi-dia/
-6. Si sigue apareciendo la versión anterior, cierra la PWA por completo y vuelve a abrirla. El service worker ahora usa caché mi-dia-v3.
+SUBIR DESDE EL MÓVIL
+1. Descomprime este ZIP.
+2. Entra en el repositorio GitHub Mi-dia.
+3. Abre cada archivo de la carpeta principal de v4 y usa el lápiz/Edit o Add file para reemplazarlo/subirlo.
+4. Sube index.html, sw.js, manifest.webmanifest, icon.svg y README.txt a la raíz del repositorio.
+5. Espera a que GitHub Pages publique los cambios y recarga la web. Si ves la versión antigua, cierra la pestaña y vuelve a abrirla.
+6. No subas las carpetas backup-v2 ni backup-v3 a la raíz de publicación si no quieres que se publiquen como parte de la web; quedan dentro del ZIP como copias locales.
 
-QUÉ INCLUYE
-- Mantiene el estilo oscuro y verde de la versión actual.
-- Previsión meteorológica de Open-Meteo sin clave API.
-- Duración/distancia de ruta estimada mediante OSRM/OpenStreetMap.
-- Enlaces de tráfico en tiempo real de Google Maps y del SCT.
-- Notas guardadas localmente en el navegador.
+IMPORTANTE
+- Los datos de partidos de esta versión son una lista de próximos encuentros basada en calendarios consultados el 21/10/2026, no una conexión en tiempo real. Usa los enlaces oficiales para confirmar cambios.
+- Meteocat: la clave API no está incluida ni publicada. La integración autenticada de Meteocat y los avisos automáticos es el siguiente paso; la previsión actual sigue usando Open-Meteo.
+- El tiempo OSRM es una duración orientativa sin congestión actual. Para incidencias y tráfico real, usa los enlaces de Maps/SCT.
+- Las notas se guardan en localStorage de este navegador y no se sincronizan entre dispositivos.
 
-LIMITACIONES IMPORTANTES
-- La ruta OSRM NO incluye retenciones ni tráfico en tiempo real; la duración es orientativa.
-- La dirección del trabajo se intenta localizar con Nominatim. Si no encuentra la dirección o el servicio limita consultas, la estimación de ruta no aparecerá; los enlaces a Maps siguen funcionando.
-- La sección de fútbol enlaza con la FCF, pero no muestra calendario ni resultados automáticos hasta confirmar el grupo oficial exacto.
-- No se incluye una clave de Meteocat. No pegues claves secretas en index.html ni en ningún repositorio público.
-- Los servicios gratuitos pueden limitar disponibilidad o cambiar condiciones. La previsión necesita Internet; la PWA conserva la estructura básica sin conexión.
+Estructura:
+index.html, sw.js, manifest.webmanifest, icon.svg, README.txt
+backup-v2/ = copia de v2
+backup-v3/ = copia de v3

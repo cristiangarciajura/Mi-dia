@@ -50,7 +50,7 @@
 <body>
 <main>
   <header>
-    <div><div class="brand">MI DÍA · V3</div><h1>Tu panel personal</h1><div class="sub">Sant Vicenç dels Horts · Barcelona</div></div>
+    <div><div class="brand">MI DÍA · V4</div><h1>Tu panel personal</h1><div class="sub">Sant Vicenç dels Horts · Barcelona</div></div>
     <div class="moon" aria-hidden="true">☾</div>
   </header>
 
@@ -95,9 +95,27 @@
   </section>
 
   <section class="card">
+    <div class="heading"><span class="icon">⚽</span><div><h2>Real Madrid</h2><div class="eyebrow">PRIMER EQUIPO · PRÓXIMOS PARTIDOS</div></div></div>
+    <div id="madrid-next" class="metric-row"><div class="metric"><span>Próximo partido</span><strong>21 oct</strong><span>21:00 · Real Madrid - RB Leipzig</span></div></div>
+    <h3>Últimos resultados publicados</h3>
+    <div id="madrid-results"><p>Roma 3–4 Real Madrid · Champions League</p><p>Real Madrid 4–1 Sevilla · Liga</p></div>
+    <div class="links"><a href="https://www.laliga.com/clubes/real-madrid/proximos-partidos" target="_blank" rel="noopener">Calendario oficial de LaLiga ↗</a><a href="https://www.realmadrid.com/es-ES" target="_blank" rel="noopener">Web oficial del Real Madrid ↗</a></div>
+    <p class="status">Los horarios pueden cambiar. Abre el calendario oficial para confirmar antes del partido.</p>
+  </section>
+
+  <section class="card">
+    <div class="heading"><span class="icon">🔵⚪</span><div><h2>RCD Espanyol</h2><div class="eyebrow">PRIMER EQUIPO · PRÓXIMOS PARTIDOS</div></div></div>
+    <div id="espanyol-next" class="metric-row"><div class="metric"><span>Próximo partido</span><strong>24 oct</strong><span>16:15 · Racing de Santander - Espanyol</span></div></div>
+    <h3>Otros partidos próximos</h3>
+    <div id="espanyol-upcoming"><p>27 oct · 19:00 · Sestao River - Espanyol · Copa del Rey</p><p>30 oct · 21:00 · Villarreal - Espanyol</p></div>
+    <div class="links"><a href="https://www.laliga.com/clubes/rcd-espanyol/proximos-partidos" target="_blank" rel="noopener">Calendario oficial de LaLiga ↗</a><a href="https://www.rcdespanyol.com/es/calendario-de-los-equipos-del-rcd-espanyol" target="_blank" rel="noopener">Calendario oficial del Espanyol ↗</a></div>
+    <p class="status">El calendario incluye Liga y Copa cuando aparecen publicados por las fuentes oficiales.</p>
+  </section>
+
+  <section class="card">
     <div class="heading"><span class="icon">🏆</span><div><h2>Mi equipo · FCF</h2><div class="eyebrow">CADETE S15 · SEGONA DIVISIÓ</div></div></div>
     <p>Penya Barcelonista Sant Vicenç dels Horts</p>
-    <p class="muted">Para no mostrar partidos de un grupo equivocado, el calendario oficial queda enlazado hasta confirmar el grupo exacto. Esta versión no inventa rivales ni resultados.</p>
+    <p class="muted">Pendiente de confirmar el grupo exacto para mostrar automáticamente los partidos y resultados correctos del equipo.</p>
     <div class="links"><a href="https://www.fcf.cat/" target="_blank" rel="noopener">Web oficial de la FCF ↗</a><a href="https://www.fcf.cat/competicio" target="_blank" rel="noopener">Competiciones y calendarios ↗</a></div>
   </section>
 
@@ -112,11 +130,38 @@
   </section>
 
   <footer>
-    Mi Día · versión 0.3 · PWA. Tiempo: previsión Open-Meteo. Tráfico: estimación básica de ruta sin datos de congestión en tiempo real. Fútbol: pendiente de confirmar el grupo oficial. La clave de Meteocat no se guarda ni se publica en esta versión.
+    Mi Día · versión 0.4 · PWA. Tiempo: previsión Open-Meteo. Tráfico: estimación básica de ruta sin datos de congestión en tiempo real. Fútbol: pendiente de confirmar el grupo oficial. La clave de Meteocat no se incluye en los archivos públicos. La integración autenticada queda como siguiente paso.
   </footer>
 </main>
 <script>
 const $ = id => document.getElementById(id);
+// Calendarios publicados consultados el 21/10/2026. Se mantienen enlaces oficiales para verificar cambios.
+const FIXTURES = {
+  madrid: [
+    {date:'2026-10-21T21:00:00+02:00', home:'Real Madrid', away:'RB Leipzig', comp:'Champions League'},
+    {date:'2026-10-25T21:00:00+02:00', home:'FC Barcelona', away:'Real Madrid', comp:'LaLiga'},
+    {date:'2026-11-01T16:15:00+01:00', home:'Racing de Santander', away:'Real Madrid', comp:'LaLiga'},
+    {date:'2026-11-04T18:45:00+01:00', home:'AEK Atenas', away:'Real Madrid', comp:'Champions League'},
+    {date:'2026-11-07T20:00:00+01:00', home:'Valencia CF', away:'Real Madrid', comp:'LaLiga'}
+  ],
+  espanyol: [
+    {date:'2026-10-24T16:15:00+02:00', home:'Racing de Santander', away:'RCD Espanyol', comp:'LaLiga'},
+    {date:'2026-10-27T19:00:00+01:00', home:'Sestao River', away:'RCD Espanyol', comp:'Copa del Rey'},
+    {date:'2026-10-30T21:00:00+01:00', home:'Villarreal CF', away:'RCD Espanyol', comp:'LaLiga'},
+    {date:'2026-11-07T16:15:00+01:00', home:'RCD Espanyol', away:'RC Deportivo', comp:'LaLiga'}
+  ]
+};
+function fixtureDate(iso){return new Intl.DateTimeFormat('es-ES',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(iso));}
+function renderFixtures(){
+  const now=Date.now();
+  const madrid=FIXTURES.madrid.filter(f=>new Date(f.date).getTime()>=now);
+  const esp=FIXTURES.espanyol.filter(f=>new Date(f.date).getTime()>=now);
+  const render=(f)=>`<div class="metric"><span>${fixtureDate(f.date)} · ${f.comp}</span><strong style="font-size:16px">${f.home}</strong><span>vs</span><strong style="font-size:16px">${f.away}</strong></div>`;
+  $('madrid-next').innerHTML=madrid.length?madrid.slice(0,3).map(render).join(''):'<p>Consulta el calendario oficial para los próximos encuentros.</p>';
+  $('espanyol-next').innerHTML=esp.length?render(esp[0]):'<p>Consulta el calendario oficial para los próximos encuentros.</p>';
+  $('espanyol-upcoming').innerHTML=esp.slice(1,4).map(f=>`<p>${fixtureDate(f.date)} · ${f.home} - ${f.away} <span class="pill">${f.comp}</span></p>`).join('')||'<p>No hay más partidos publicados en esta lista.</p>';
+}
+
 const HOME = {lat: 41.3933921, lon: 2.0099830};
 const WORK_QUERY = "Ernesto Ventos SA, Ctra. Reial 120B, 08960 Sant Just Desvern";
 const WEATHER_URL = `https://api.open-meteo.com/v1/forecast?latitude=${HOME.lat}&longitude=${HOME.lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,wind_speed_10m&hourly=temperature_2m,precipitation_probability,precipitation,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max&forecast_days=2&timezone=Europe%2FMadrid`;
@@ -203,6 +248,7 @@ $("notes").addEventListener("click",e=>{
 $("clear-notes").addEventListener("click",()=>{localStorage.removeItem("mi-dia-notes");renderNotes();});
 if("serviceWorker" in navigator){window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(()=>{}));}
 renderNotes();
+renderFixtures();
 loadAll();
 </script>
 </body>

@@ -1,4 +1,4 @@
-const CACHE = "mi-dia-v3";
+const CACHE = "mi-dia-v4";
 const ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./icon.svg"];
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));
