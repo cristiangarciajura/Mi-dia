@@ -50,7 +50,7 @@
 <body>
 <main>
   <header>
-    <div><div class="brand">MI DÍA · V4</div><h1>Tu panel personal</h1><div class="sub">Sant Vicenç dels Horts · Barcelona</div></div>
+    <div><div class="brand">MI DÍA · V5</div><h1>Tu panel personal</h1><div class="sub">Sant Vicenç dels Horts · Barcelona</div></div>
     <div class="moon" aria-hidden="true">☾</div>
   </header>
 
@@ -90,8 +90,19 @@
     </div>
     <h3>Próximas horas</h3>
     <div id="hourly" class="hourly"><div class="status">Cargando previsión por horas…</div></div>
-    <p class="status">Datos meteorológicos gratuitos de Open-Meteo. No requiere clave API; no sustituye los avisos oficiales.</p>
-    <div class="links"><a href="https://www.meteo.cat/" target="_blank" rel="noopener">Meteocat y avisos oficiales ↗</a></div>
+    <div class="metric" style="margin-top:12px">
+      <h3 style="margin-top:0">🔔 Avisos de lluvia en este móvil</h3>
+      <p>Te avisará si la previsión detecta lluvia en las próximas 24 horas por encima del umbral que elijas. La web debe estar abierta para comprobarlo; no puede enviar avisos en segundo plano si la cierras.</p>
+      <label for="rain-threshold">Avisar cuando la probabilidad alcance</label>
+      <select id="rain-threshold" style="width:100%;background:#121a15;color:var(--text);border:1px solid #3b5143;border-radius:10px;padding:10px;font:inherit;margin-top:5px">
+        <option value="30">30% · más sensible</option><option value="50" selected>50% · equilibrado</option><option value="70">70% · solo lluvia probable</option>
+      </select>
+      <button id="enable-rain-alerts">Activar avisos de lluvia</button>
+      <button id="disable-rain-alerts" class="secondary">Desactivar avisos</button>
+      <div id="rain-alert-status" class="status" aria-live="polite">Avisos desactivados.</div>
+    </div>
+    <p class="status">Previsión gratuita de Open-Meteo, sin cuenta ni clave API. Para alertas oficiales de Meteocat, consulta el enlace siguiente. Esta alternativa no equivale a los avisos oficiales del Servei Meteorològic de Catalunya.</p>
+    <div class="links"><a href="https://www.meteo.cat/prediccio/general" target="_blank" rel="noopener">Meteocat: previsión y avisos oficiales ↗</a></div>
   </section>
 
   <section class="card">
@@ -130,7 +141,7 @@
   </section>
 
   <footer>
-    Mi Día · versión 0.4 · PWA. Tiempo: previsión Open-Meteo. Tráfico: estimación básica de ruta sin datos de congestión en tiempo real. Fútbol: pendiente de confirmar el grupo oficial. La clave de Meteocat no se incluye en los archivos públicos. La integración autenticada queda como siguiente paso.
+    Mi Día · versión 0.5 · PWA. Tiempo: previsión Open-Meteo. Tráfico: estimación básica de ruta sin datos de congestión en tiempo real. Fútbol: pendiente de confirmar el grupo oficial. La clave de Meteocat no se incluye en los archivos públicos. La integración autenticada queda como siguiente paso.
   </footer>
 </main>
 <script>
@@ -187,7 +198,55 @@ async function loadWeather(){
     const i=d.hourly.time.indexOf(t);
     return `<div class="hour"><strong>${fmtTime(t)}</strong><span>${fmtNum(d.hourly.temperature_2m[i],"°")}</span><span>🌧 ${d.hourly.precipitation_probability[i] ?? 0}%</span></div>`;
   }).join("") || '<div class="status">No hay datos horarios disponibles.</div>';
+  inspectRainForecast(d, true);
 }
+const RAIN_PREF_KEY = "mi-dia-rain-alerts-v1";
+function getRainPrefs(){
+  try { return JSON.parse(localStorage.getItem(RAIN_PREF_KEY) || "null"); } catch(e) { return null; }
+}
+function updateRainAlertStatus(message){ const el=$("rain-alert-status"); if(el) el.textContent=message; }
+function inspectRainForecast(data, sendNotification=false){
+  const prefs=getRainPrefs();
+  if(!prefs || !prefs.enabled) return;
+  const hourly=data.hourly;
+  const nowIndex=Math.max(0,hourly.time.findIndex(t=>t>=data.current.time));
+  const end=Math.min(hourly.time.length,nowIndex+25);
+  const threshold=Number(prefs.threshold || 50);
+  let candidate=null;
+  for(let i=nowIndex;i<end;i++){
+    const probability=Number(hourly.precipitation_probability[i] || 0);
+    const amount=Number(hourly.precipitation[i] || 0);
+    if(probability>=threshold && amount>=0.1){candidate={time:hourly.time[i],probability,amount};break;}
+  }
+  if(!candidate){updateRainAlertStatus(`Avisos activados · sin lluvia prevista por encima del ${threshold}% en las próximas 24 h.`);return;}
+  const when=new Intl.DateTimeFormat("es-ES",{weekday:"short",hour:"2-digit",minute:"2-digit"}).format(new Date(candidate.time));
+  updateRainAlertStatus(`Posible lluvia: ${when} · ${Math.round(candidate.probability)}% de probabilidad. Se avisará si aparece una nueva franja de lluvia.`);
+  if(!sendNotification || !("Notification" in window) || Notification.permission!=="granted") return;
+  const key=candidate.time+":"+threshold;
+  if(prefs.lastAlert===key) return;
+  try {
+    new Notification("Mi Día · posible lluvia",{body:`Sant Vicenç dels Horts: lluvia prevista ${when} (${Math.round(candidate.probability)}% de probabilidad).`,icon:"./icon.svg",tag:"mi-dia-rain-"+candidate.time});
+    prefs.lastAlert=key;localStorage.setItem(RAIN_PREF_KEY,JSON.stringify(prefs));
+  } catch(e) { updateRainAlertStatus("Los avisos del navegador no están disponibles en este momento."); }
+}
+async function enableRainAlerts(){
+  if(!("Notification" in window)){updateRainAlertStatus("Este navegador no admite notificaciones. Puedes seguir consultando la previsión en la web.");return;}
+  const permission=await Notification.requestPermission();
+  if(permission!=="granted"){updateRainAlertStatus("Permiso de notificaciones no concedido. Actívalo en los ajustes del navegador si quieres recibir avisos.");return;}
+  const prefs={enabled:true,threshold:Number($("rain-threshold").value),lastAlert:null};
+  localStorage.setItem(RAIN_PREF_KEY,JSON.stringify(prefs));
+  updateRainAlertStatus("Avisos activados. Consultando la previsión…");
+  try { await loadWeather(); } catch(e) { updateRainAlertStatus("Avisos activados, pero no se pudo actualizar la previsión. Pulsa Actualizar panel."); }
+}
+function initRainAlerts(){
+  const prefs=getRainPrefs();
+  if(prefs && prefs.enabled){$("rain-threshold").value=String(prefs.threshold||50);updateRainAlertStatus("Avisos activados · se revisará la previsión cuando abras o actualices Mi Día.");}
+  $("enable-rain-alerts").addEventListener("click",enableRainAlerts);
+  $("disable-rain-alerts").addEventListener("click",()=>{localStorage.removeItem(RAIN_PREF_KEY);updateRainAlertStatus("Avisos desactivados.");});
+  // Recheck periodically while the page remains open; browser timers stop when the page is closed.
+  window.setInterval(()=>{if(document.visibilityState==="visible" && getRainPrefs()?.enabled) loadWeather().catch(()=>{});},30*60*1000);
+}
+
 async function geocodeWork(){
   const cached = localStorage.getItem("mi-dia-work-coords");
   if(cached) { try { return JSON.parse(cached); } catch(e){} }
@@ -249,6 +308,7 @@ $("clear-notes").addEventListener("click",()=>{localStorage.removeItem("mi-dia-n
 if("serviceWorker" in navigator){window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(()=>{}));}
 renderNotes();
 renderFixtures();
+initRainAlerts();
 loadAll();
 </script>
 </body>
