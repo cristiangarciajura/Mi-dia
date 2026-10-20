@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101512">
+  <meta name="description" content="Tu panel personal de tráfico, tiempo y fútbol.">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <title>Mi Día</title>
+  <style>
+    :root{color-scheme:dark;--bg:#101512;--panel:#1a231e;--accent:#8ce0a7;--muted:#b6c4bb;--text:#f0f5f1}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,sans-serif}
+    main{max-width:720px;margin:auto;padding:22px 16px 40px}
+    header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+    .brand{color:var(--accent);font-size:12px;font-weight:800;letter-spacing:2px}
+    h1{font-size:28px;margin:4px 0}
+    .sub,.muted{color:var(--muted)}
+    .moon{background:var(--panel);border-radius:15px;padding:12px;font-size:23px}
+    .hero,.card{background:var(--panel);border:1px solid #2a3930;border-radius:20px;padding:17px;margin:12px 0}
+    .eyebrow{color:var(--accent);font-size:11px;font-weight:800;letter-spacing:1.3px}
+    h2{font-size:18px;margin:8px 0}
+    p{font-size:14px;line-height:1.5;margin:8px 0}
+    button{background:var(--accent);color:#082112;border:0;border-radius:12px;padding:11px 14px;font-weight:800;font-size:14px;margin-top:8px}
+    .icon{display:inline-grid;place-items:center;background:#26382d;border-radius:12px;width:42px;height:42px;font-size:21px;margin-right:10px}
+    .heading{display:flex;align-items:center}
+    .status{font-size:12px;color:var(--muted)}
+    .links{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+    .links a{color:var(--accent);font-size:13px}
+    footer{font-size:12px;color:var(--muted);margin-top:22px}
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div><div class="brand">MI DÍA</div><h1>Tu panel personal</h1><div class="sub">Sant Vicenç dels Horts · Barcelona</div></div>
+    <div class="moon" aria-hidden="true">☾</div>
+  </header>
+
+  <section class="hero">
+    <div class="eyebrow">TU RESUMEN</div>
+    <h2>Que el día te pille preparado.</h2>
+    <p class="muted">Tráfico, meteorología y fútbol en un solo sitio.</p>
+    <button id="refresh">Actualizar panel</button>
+    <div id="status" class="status" aria-live="polite">Prototipo inicial: todavía no conectado a datos en tiempo real.</div>
+  </section>
+
+  <section class="card">
+    <div class="heading"><span class="icon">🚗</span><div><h2>Tráfico al trabajo</h2><div class="eyebrow">IDA 06:55 · VUELTA 17:00</div></div></div>
+    <p>Sant Vicenç dels Horts ↔ Ernesto Ventós S.A.</p>
+    <p class="muted">Ctra. Reial, 120B · 08960 Sant Just Desvern</p>
+    <p class="muted">Pendiente de conectar tiempos reales, incidencias y rutas alternativas.</p>
+    <div class="links"><a href="https://www.google.com/maps/dir/Sant+Vicen%C3%A7+dels+Horts/Ernesto+Vent%C3%B3s+SA,+Ctra.+Reial+120B,+Sant+Just+Desvern/" target="_blank" rel="noopener">Abrir ruta en Maps ↗</a></div>
+  </section>
+
+  <section class="card">
+    <div class="heading"><span class="icon">🌦️</span><div><h2>El tiempo</h2><div class="eyebrow">HOY Y MAÑANA</div></div></div>
+    <p>Previsión, lluvia por horas y avisos meteorológicos.</p>
+    <p class="muted">Pendiente de conectar un proveedor meteorológico.</p>
+    <div class="links"><a href="https://www.meteo.cat/" target="_blank" rel="noopener">Consultar Meteocat ↗</a></div>
+  </section>
+
+  <section class="card">
+    <div class="heading"><span class="icon">🏆</span><div><h2>Mi equipo · FCF</h2><div class="eyebrow">CADETE S15 · SEGONA DIVISIÓ</div></div></div>
+    <p>Penya Barcelonista Sant Vicenç dels Horts</p>
+    <p class="muted">Próximo rival, horario, campo, resultados y clasificación: pendiente de localizar el grupo oficial y conectar el calendario.</p>
+    <div class="links"><a href="https://www.fcf.cat/" target="_blank" rel="noopener">Web oficial de la FCF ↗</a></div>
+  </section>
+
+  <section class="card">
+    <div class="heading"><span class="icon">💡</span><div><h2>Mis extras</h2><div class="eyebrow">A TU MANERA</div></div></div>
+    <p>Este espacio queda reservado para recordatorios, tareas, planes y nuevas ideas.</p>
+  </section>
+
+  <footer>Mi Día · versión 0.1 · Prototipo PWA. Los datos en directo y las notificaciones automáticas aún no están conectados.</footer>
+</main>
+<script>
+  document.getElementById('refresh').addEventListener('click', () => {
+    document.getElementById('status').textContent =
+      'Interfaz actualizada. Para mostrar datos reales hay que conectar los servicios de tráfico, tiempo y FCF.';
+  });
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+  }
+</script>
+</body>
+</html>
