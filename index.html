@@ -61,7 +61,7 @@
       <div class="section-heading" id="ruta"><div><span class="eyebrow">MOVILIDAD</span><h2>Tu ruta al trabajo</h2></div><span class="section-meta">Ida 06:55 · Vuelta 17:00</span></div>
       <section class="panel route-panel">
         <div class="route-endpoints">
-          <div class="endpoint"><span class="endpoint-dot home-dot"></span><div><small>ORIGEN</small><strong>Sant Vicenç dels Horts</strong></div></div>
+          <div class="endpoint"><span class="endpoint-dot home-dot"></span><div><small>ORIGEN</small><strong id="home-address-label">Travessera d’Aragó</strong><span>Sant Vicenç dels Horts</span></div></div>
           <div class="route-line"><span>↓</span></div>
           <div class="endpoint"><span class="endpoint-dot work-dot"></span><div><small>DESTINO</small><strong>Ernesto Ventós S.A.</strong><span>Ctra. Reial, 120B · Sant Just Desvern</span></div></div>
         </div>
@@ -71,8 +71,8 @@
         </div>
         <div class="notice"><span aria-hidden="true">ⓘ</span><p><b>Importante:</b> esta duración es una estimación sin retenciones en tiempo real. Para decidir cuándo salir, abre Maps y consulta las incidencias oficiales.</p></div>
         <div class="button-row">
-          <a class="button button-primary" href="https://www.google.com/maps/dir/?api=1&origin=Sant+Vicen%C3%A7+dels+Horts&destination=Ernesto+Vent%C3%B3s+SA%2C+Ctra.+Reial+120B%2C+Sant+Just+Desvern&travelmode=driving" target="_blank" rel="noopener">Ver tráfico de ida ↗</a>
-          <a class="button button-secondary" href="https://www.google.com/maps/dir/?api=1&origin=Ernesto+Vent%C3%B3s+SA%2C+Ctra.+Reial+120B%2C+Sant+Just+Desvern&destination=Sant+Vicen%C3%A7+dels+Horts&travelmode=driving" target="_blank" rel="noopener">Ruta de vuelta ↗</a>
+          <a class="button button-primary" href="https://www.google.com/maps/dir/?api=1&origin=Travessera+d%27Arag%C3%B3%2C+Sant+Vicen%C3%A7+dels+Horts%2C+Barcelona&destination=Ernesto+Vent%C3%B3s+SA%2C+Ctra.+Reial+120B%2C+Sant+Just+Desvern&travelmode=driving" target="_blank" rel="noopener">Ver tráfico de ida ↗</a>
+          <a class="button button-secondary" href="https://www.google.com/maps/dir/?api=1&origin=Ernesto+Vent%C3%B3s+SA%2C+Ctra.+Reial+120B%2C+Sant+Just+Desvern&destination=Travessera+d%27Arag%C3%B3%2C+Sant+Vicen%C3%A7+dels+Horts%2C+Barcelona&travelmode=driving" target="_blank" rel="noopener">Ruta de vuelta ↗</a>
         </div>
         <div class="links-row"><a href="https://transit.gencat.cat/es/informacio-viaria/estat-transit/mapa-continu-mct/index.html" target="_blank" rel="noopener">Mapa oficial del SCT</a><a href="https://cit.transit.gencat.cat/" target="_blank" rel="noopener">Incidencias viarias</a></div>
         <p id="traffic-status" class="small-status" aria-live="polite">Ruta pendiente de consultar.</p>
@@ -109,7 +109,7 @@
           <p class="small-status">No mostramos un rival ni una hora como confirmados si no podemos comprobar el calendario oficial automáticamente.</p>
         </div>
         <div class="button-row"><a class="button button-primary" href="https://www.fcf.cat/competicio" target="_blank" rel="noopener">Abrir competiciones FCF ↗</a><a class="button button-secondary" href="https://www.google.com/search?q=site%3Afcf.cat+%22Penya+Barcelonista+Sant+Vicen%C3%A7+dels+Horts%22+Cadet+S15+Grup+14" target="_blank" rel="noopener">Buscar mi equipo ↗</a></div>
-        <div class="team-next-card fcf-data-card"><div class="next-card-heading"><span>CALENDARIO Y CLASIFICACIÓN</span><span class="pill">FCF</span></div><p id="fcf-data-status" class="small-status" aria-live="polite">Pendiente de conectar la ficha exacta de la competición.</p><p class="small-status">Grupo: Segona Divisió S15 · Grup 14. No mostramos partidos, puntos ni posiciones inventados si no se puede validar la fuente oficial.</p></div>
+        <div class="team-next-card fcf-data-card"><div class="next-card-heading"><span>PRÓXIMO PARTIDO</span><span class="pill">GRUP 14</span></div><div id="fcf-fixtures-feed" class="fixture-feed"><p class="sports-copy">Consultando calendario…</p></div><div class="next-card-heading"><span>CLASIFICACIÓN DEL GRUPO</span><span class="pill">2026–27</span></div><p id="fcf-data-status" class="small-status" aria-live="polite">Consultando calendario y clasificación…</p><div id="fcf-standings"></div><p class="small-status">Los datos se intentan leer de elFutbol; contrástalos con la FCF si no aparecen completos.</p></div>
         <div class="button-row"><a class="button button-primary" href="https://www.fcf.cat/resultats/2627/futbol-11/cadet-segona-divisio-s15/grup-14/jornada-5" target="_blank" rel="noopener">Calendario oficial FCF · Grup 14 ↗</a><a class="button button-secondary" href="https://elfutbol.co/es/team/pa-barc-sant-vicenc-horts-cadet-s15-a" target="_blank" rel="noopener">Partidos y clasificación ↗</a></div>
         <p class="small-status">El escudo se carga desde la imagen pública del perfil @PBSV1978; si el servicio no está disponible, aparece un emblema provisional. Requiere conexión para mostrar la imagen.</p>
       </section>
@@ -143,7 +143,7 @@
       </section>
     </main>
 
-    <footer class="app-footer"><span class="footer-mark">MI·DÍA</span><span>Hecho para tu día a día · V6.1.1</span><button id="back-to-top" class="text-button" type="button">Volver arriba ↑</button><p>Tiempo: Open-Meteo · Ruta: OSRM/OpenStreetMap · Tráfico en tiempo real: Google Maps y SCT · Fútbol: calendarios oficiales.</p></footer>
+    <footer class="app-footer"><span class="footer-mark">MI·DÍA</span><span>Hecho para tu día a día · V6.2</span><button id="back-to-top" class="text-button" type="button">Volver arriba ↑</button><p>Tiempo: Open-Meteo · Ruta: OSRM/OpenStreetMap · Tráfico en tiempo real: Google Maps y SCT · Fútbol: calendarios oficiales.</p></footer>
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="./app.js" defer></script>

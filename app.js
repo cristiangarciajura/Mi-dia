@@ -1,8 +1,9 @@
 (() => {
   "use strict";
   const $ = id => document.getElementById(id);
-  const HOME = { lat: 41.3933921, lon: 2.0099830 };
-  const WORK_QUERY = "Ernesto Ventos SA, Ctra. Reial 120B, 08960 Sant Just Desvern";
+  const HOME_QUERY = "Travessera d'Aragó, Sant Vicenç dels Horts, Barcelona, Spain";
+  const HOME_CACHE_KEY = "mi-dia-home-coords-travessera-arago-v1";
+  const WORK_QUERY = "Ernesto Ventos SA, Ctra. Reial 120B, 08960 Sant Just Desvern, Barcelona, Spain";
   const WEATHER_URL = `https://api.open-meteo.com/v1/forecast?latitude=${HOME.lat}&longitude=${HOME.lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,wind_speed_10m&hourly=temperature_2m,precipitation_probability,precipitation,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max&forecast_days=2&timezone=Europe%2FMadrid`;
   const NOTES_KEY = "mi-dia-v6-notes";
   const RAIN_KEY = "mi-dia-rain-alerts-v1"; // Keep existing V5/V5.1 rain preference compatibility.
@@ -112,25 +113,30 @@
     window.setInterval(() => { if (document.visibilityState === "visible" && getRainPrefs()?.enabled) loadWeather().catch(() => {}); }, 30 * 60 * 1000);
   }
 
-  async function geocodeWork() {
-    const cached = safeJSON(localStorage.getItem("mi-dia-work-coords"), null);
+  async function geocodeAddress(query, cacheKey, variants = []) {
+    const cached = safeJSON(localStorage.getItem(cacheKey), null);
     if (cached && Number.isFinite(cached.lat) && Number.isFinite(cached.lon) && cached.lat > 41.2 && cached.lat < 41.6 && cached.lon > 1.7 && cached.lon < 2.4) return cached;
-    const queries = [WORK_QUERY, "Ctra. Reial 120B, 08960 Sant Just Desvern, Barcelona, Spain", "Ernesto Ventos Sant Just Desvern"];
     let lastError = null;
-    for (const query of queries) {
+    for (const search of [query, ...variants]) {
       try {
-        const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(query)}`;
+        const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(search)}`;
         const response = await fetch(url, {headers:{"Accept":"application/json"},cache:"no-store"});
         if (!response.ok) throw new Error("El servicio de mapas no ha respondido.");
         const items = await response.json();
         if (!items.length) continue;
-        const coords = {lat:Number(items[0].lat),lon:Number(items[0].lon)};
+        const coords = {lat:Number(items[0].lat),lon:Number(items[0].lon),label:items[0].display_name || search};
         if (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lon)) continue;
-        localStorage.setItem("mi-dia-work-coords", JSON.stringify(coords));
+        localStorage.setItem(cacheKey, JSON.stringify(coords));
         return coords;
       } catch (error) { lastError = error; }
     }
-    throw new Error(lastError?.message || "No se encontró la dirección exacta del trabajo. Revisa la dirección o abre Google Maps.");
+    throw new Error(lastError?.message || `No se encontró la dirección: ${query}`);
+  }
+  async function geocodeHome() {
+    return geocodeAddress(HOME_QUERY, HOME_CACHE_KEY, ["Travessera d'Aragó, Sant Vicenç dels Horts, Barcelona, Spain", "Travessera d'Aragó, Sant Vicenç dels Horts"]);
+  }
+  async function geocodeWork() {
+    return geocodeAddress(WORK_QUERY, "mi-dia-work-coords-v2", ["Ctra. Reial 120B, 08960 Sant Just Desvern, Barcelona, Spain", "Ernesto Ventos Sant Just Desvern"]);
   }
   async function getRoadRoute(from, to) {
     const coords = `${from.lon},${from.lat};${to.lon},${to.lat}`;
@@ -141,8 +147,8 @@
     return data.routes[0];
   }
   async function loadTraffic() {
-    const work = await geocodeWork();
-    const [outbound, inbound] = await Promise.all([getRoadRoute(HOME, work), getRoadRoute(work, HOME)]);
+    const [home, work] = await Promise.all([geocodeHome(), geocodeWork()]);
+    const [outbound, inbound] = await Promise.all([getRoadRoute(home, work), getRoadRoute(work, home)]);
     $("drive-time").textContent = fmtDuration(outbound.duration);
     $("drive-distance").textContent = `${(outbound.distance / 1000).toFixed(1)} km por carretera`;
     $("return-time").textContent = fmtDuration(inbound.duration);
@@ -150,7 +156,7 @@
     $("summary-route").textContent = fmtDuration(outbound.duration);
     $("summary-route-foot").textContent = `${(outbound.distance / 1000).toFixed(1)} km · sin retenciones`;
     const stamp = new Intl.DateTimeFormat("es-ES",{hour:"2-digit",minute:"2-digit"}).format(new Date());
-    $("traffic-status").textContent = `Ruta recalculada a las ${stamp} con OSRM/OpenStreetMap. Ida y vuelta se calculan por separado; no incluye tráfico en tiempo real.`;
+    $("traffic-status").textContent = `Ruta recalculada a las ${stamp} desde ${home.label || HOME_QUERY}. Ida y vuelta por separado; sin tráfico en tiempo real. Si falta el número de portal, el origen puede ser aproximado.`;
     return {ok:true};
   }
 
@@ -243,58 +249,138 @@
     const data = await response.json();
     return Array.isArray(data.events) ? data.events : [];
   }
+  async function fetchHTMLWithFallback(url) {
+    let lastError;
+    const candidates = [url, `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`];
+    for (const candidate of candidates) {
+      try {
+        const response = await fetch(candidate, {cache:"no-store"});
+        if (!response.ok) throw new Error(`Fuente no disponible (${response.status}).`);
+        const html = await response.text();
+        if (html && html.length > 300) return html;
+      } catch (error) { lastError = error; }
+    }
+    throw lastError || new Error("No se pudo leer la fuente externa.");
+  }
+  function parseLaLigaFixtures(html, clubKey) {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const rows = [...doc.querySelectorAll("table tr")];
+    const now = Date.now();
+    const matches = [];
+    for (const row of rows) {
+      const text = (row.innerText || row.textContent || "").replace(/\s+/g," ").trim();
+      if (!text || !/\d{1,2}\.\d{2}\.20\d{2}/.test(text)) continue;
+      const dateMatch = text.match(/(\d{1,2})\.(\d{2})\.(20\d{2})/);
+      if (!dateMatch) continue;
+      const date = new Date(Number(dateMatch[3]), Number(dateMatch[2])-1, Number(dateMatch[1]), 23, 59, 59);
+      if (date.getTime() < now - 60*60*1000) continue;
+      const cells = [...row.querySelectorAll("th,td")].map(c=>(c.innerText||c.textContent||"").replace(/\s+/g," ").trim()).filter(Boolean);
+      const matchText = cells.join(" · ") || text;
+      if (clubKey === "madrid" ? !/real madrid/i.test(matchText) : !/espanyol/i.test(matchText)) continue;
+      matches.push({date, text:matchText, competition:"LaLiga"});
+    }
+    return matches.sort((a,b)=>a.date-b.date).slice(0,2);
+  }
   async function loadClubSchedule(targetId, clubKey) {
     const target = $(targetId);
     target.innerHTML = '<p class="sports-copy">Actualizando calendario…</p>';
     const now = new Date();
-    const future = new Date(now); future.setDate(future.getDate()+100);
+    const future = new Date(now); future.setDate(future.getDate()+120);
     const from = ymd(now), to = ymd(future);
+    const officialUrl = clubKey === "madrid" ? "https://www.laliga.com/clubes/real-madrid/proximos-partidos" : "https://www.laliga.com/clubes/rcd-espanyol/proximos-partidos";
+    const leagues = clubKey === "madrid" ? ["esp.1", "uefa.champions"] : ["esp.1"];
+    const errors = [];
+    let partialUpcoming = [];
     try {
-      const leagues = clubKey === "madrid" ? ["esp.1", "uefa.champions"] : ["esp.1"];
       const responses = await Promise.allSettled(leagues.map(league => fetchScoreboard(league, from, to)));
       const events = responses.filter(r=>r.status==="fulfilled").flatMap(r=>r.value);
-      if (!events.length) throw new Error("No se han recibido calendarios de las fuentes deportivas.");
-      const unique = new Map();
-      events.forEach(e => { if (e.id) unique.set(e.id, e); });
+      const unique = new Map(); events.forEach(e => { if (e.id) unique.set(e.id, e); });
       const allEvents = [...unique.values()];
       const upcoming = allEvents.filter(e => e.date && new Date(e.date).getTime() >= Date.now()-60*60*1000)
         .map(e => clubMatch(e, clubKey)).filter(Boolean)
         .sort((a,b)=>new Date(a.event.date)-new Date(b.event.date)).slice(0,2);
+      partialUpcoming = upcoming;
       const results = allEvents.filter(e=>e.date && new Date(e.date).getTime()<Date.now() && e.competitions?.[0]?.status?.type?.completed)
         .map(e=>clubMatch(e,clubKey)).filter(Boolean).sort((a,b)=>new Date(b.event.date)-new Date(a.event.date)).slice(0,1);
-      if (!upcoming.length && !results.length) throw new Error("No encontramos partidos del equipo en el periodo consultado.");
+      if (upcoming.length >= 2) {
+        const dateText = date => new Intl.DateTimeFormat("es-ES",{weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit",timeZone:"Europe/Madrid"}).format(new Date(date));
+        const render = (match, result=false) => { const {event,competition,home,away,homeName,awayName}=match; const compName=competition?.name||event.league?.name||"Fútbol"; const score=result&&home.score!=null&&away.score!=null?`<span class="fixture-mini-result">${escapeHTML(home.score)}–${escapeHTML(away.score)}</span>`:""; return `<div class="fixture-mini"><div class="fixture-mini-date">${escapeHTML(dateText(event.date))}</div><div class="fixture-mini-info"><strong>${escapeHTML(homeName)} – ${escapeHTML(awayName)}</strong><span>${escapeHTML(compName)}</span>${score}</div></div>`; };
+        target.innerHTML = upcoming.map(m=>render(m)).join("");
+        if (results.length) target.insertAdjacentHTML("beforeend", `<div class="small-status">Último resultado: ${render(results[0],true)}</div>`);
+        if (responses.some(r=>r.status==="rejected")) target.insertAdjacentHTML("beforeend", '<p class="small-status">Un calendario secundario no respondió; revisa también el calendario oficial.</p>');
+        return {ok:true,count:upcoming.length};
+      }
+      errors.push("ESPN no devolvió próximos partidos");
+    } catch (error) { errors.push(error.message || "ESPN no disponible"); }
+    try {
+      const html = await fetchHTMLWithFallback(officialUrl);
+      const matches = parseLaLigaFixtures(html, clubKey);
+      if (matches.length) {
+        target.innerHTML = matches.map(match => `<div class="fixture-mini"><div class="fixture-mini-date">${escapeHTML(new Intl.DateTimeFormat("es-ES",{weekday:"short",day:"numeric",month:"short",timeZone:"Europe/Madrid"}).format(match.date))}</div><div class="fixture-mini-info"><strong>${escapeHTML(match.text)}</strong><span>LaLiga · calendario oficial</span></div></div>`).join("");
+        return {ok:true,count:matches.length};
+      }
+      errors.push("el calendario oficial no se pudo interpretar automáticamente");
+    } catch (error) { errors.push(error.message || "LaLiga no disponible"); }
+    if (partialUpcoming.length) {
       const dateText = date => new Intl.DateTimeFormat("es-ES",{weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit",timeZone:"Europe/Madrid"}).format(new Date(date));
-      const render = (match, result=false) => {
-        const {event,competition,home,away,homeName,awayName}=match;
-        const compName = competition?.name || event.league?.name || "Fútbol";
-        const score = result && home.score != null && away.score != null ? `<span class="fixture-mini-result">${escapeHTML(home.score)}–${escapeHTML(away.score)}</span>` : "";
-        return `<div class="fixture-mini"><div class="fixture-mini-date">${escapeHTML(dateText(event.date))}</div><div class="fixture-mini-info"><strong>${escapeHTML(homeName)} – ${escapeHTML(awayName)}</strong><span>${escapeHTML(compName)}</span>${score}</div></div>`;
-      };
-      target.innerHTML = upcoming.length ? upcoming.map(m=>render(m)).join("") : '<p class="sports-copy">No aparecen más partidos futuros en el periodo consultado.</p>';
-      if (results.length) target.insertAdjacentHTML("beforeend", `<div class="small-status">Último resultado: ${render(results[0],true)}</div>`);
-      if (responses.some(r=>r.status==="rejected")) target.insertAdjacentHTML("beforeend", '<p class="small-status">Aviso: una competición no respondió; el calendario puede estar incompleto.</p>');
-      return {ok:true, count:upcoming.length};
-    } catch (error) {
-      target.innerHTML = `<p class="sports-copy">No se ha podido actualizar automáticamente: ${escapeHTML(error.message || "error de conexión")}</p><p class="small-status">Consulta los calendarios oficiales enlazados debajo.</p>`;
-      return {ok:false, error:error.message || "Error al consultar fútbol"};
+      target.innerHTML = partialUpcoming.map(match=>`<div class="fixture-mini"><div class="fixture-mini-date">${escapeHTML(dateText(match.event.date))}</div><div class="fixture-mini-info"><strong>${escapeHTML(match.homeName)} – ${escapeHTML(match.awayName)}</strong><span>${escapeHTML(match.competition?.name || "Fútbol")}</span></div></div>`).join("") + `<p class="small-status">Solo se pudo confirmar ${partialUpcoming.length} partido(s). ${escapeHTML(errors.join("; "))}</p>`;
+      return {ok:false,message:`${clubKey === "madrid" ? "Real Madrid" : "Espanyol"}: solo se ha podido cargar una parte del calendario.`};
     }
+    target.innerHTML = `<p class="sports-copy">No se han podido cargar los partidos en esta consulta.</p><p class="small-status">Fuentes consultadas: ESPN y calendario oficial de LaLiga. ${escapeHTML(errors.join("; "))}</p>`;
+    return {ok:false,message:`${clubKey === "madrid" ? "Real Madrid" : "Espanyol"}: fuentes de calendario no disponibles.`};
   }
-
   async function loadFootball() {
     const results = await Promise.all([loadClubSchedule("madrid-fixtures", "madrid"), loadClubSchedule("espanyol-fixtures", "espanyol")]);
     const ok = results.filter(r=>r.ok).length;
-    return {ok:ok===2, message:`Fútbol: ${ok}/2 calendarios actualizados.`};
+    return {ok:ok===2,message:`Fútbol: ${ok}/2 calendarios actualizados.`};
   }
 
   async function loadFCF() {
     const status = $("fcf-data-status");
-    if (!status) return {ok:false, message:"FCF: panel no disponible."};
-    status.textContent = "Consultando la competición FCF…";
-    // The FCF competition page is the source of truth, but its public site does not
-    // currently expose a browser-accessible JSON endpoint that can be verified here.
-    // Never fabricate a fixture or table when the official data cannot be retrieved.
-    status.textContent = "El enlace directo al Grup 14 está disponible abajo. La lectura automática de calendario y clasificación todavía no está conectada: la FCF no expone aquí una fuente de datos que hayamos podido verificar desde una web estática.";
-    return {ok:false, message:"FCF: calendario y clasificación enlazados, pero aún no se pueden leer automáticamente dentro de la app."};
+    const feed = $("fcf-fixtures-feed");
+    const table = $("fcf-standings");
+    if (!status) return {ok:false,message:"FCF: panel no disponible."};
+    status.textContent = "Consultando el calendario y la clasificación del Grup 14…";
+    const url = "https://elfutbol.co/es/team/pa-barc-sant-vicenc-horts-cadet-s15-a?season=2627&tab=detalles";
+    try {
+      const html = await fetchHTMLWithFallback(url);
+      const doc = new DOMParser().parseFromString(html,"text/html");
+      const bodyText = (doc.body?.innerText || doc.body?.textContent || "").replace(/\r/g,"");
+      const rows = [...doc.querySelectorAll("table tr")].map(row=>[...row.querySelectorAll("th,td")].map(cell=>(cell.innerText||cell.textContent||"").replace(/\s+/g," ").trim()).filter(Boolean)).filter(row=>row.length>=3);
+      const teamRows = rows.filter(row=>row.join(" ").toLocaleLowerCase("es").includes("barc") || row.join(" ").toLocaleLowerCase("es").includes("sant vicenç"));
+      const matchLinks = [...doc.querySelectorAll('a[href*="/match/"]')];
+      const upcomingLink = matchLinks.find(a=>/Pª Barc|Sant Vicenç/i.test((a.innerText||a.textContent||"") + " " + (a.parentElement?.innerText||"")));
+      if (feed && upcomingLink) {
+        const container = upcomingLink.closest("article,li,tr") || upcomingLink.parentElement?.parentElement || upcomingLink.parentElement;
+        const details = (container?.innerText || upcomingLink.innerText || upcomingLink.textContent || "Próximo partido disponible en el calendario del grupo").replace(/\s+/g," ").trim();
+        feed.innerHTML = `<div class="fixture-mini"><div class="fixture-mini-date">Próximo partido</div><div class="fixture-mini-info"><strong>${escapeHTML(details.slice(0,240))}</strong><span>Temporada 2026–27 · Grup 14 · elFutbol</span><a href="${escapeHTML(new URL(upcomingLink.getAttribute("href"),url).href)}" target="_blank" rel="noopener">Ver ficha del partido ↗</a></div></div>`;
+      } else if (feed) {
+        const next = bodyText.match(/Próximo partido[^\n]{0,220}/i);
+        feed.innerHTML = `<p class="sports-copy">${escapeHTML(next?.[0] || "No se pudo interpretar el próximo partido; abre el calendario del grupo.")}</p>`;
+      }
+      if (table) {
+        let cleanRows = rows.filter(row=>row.length>=3 && row.some(cell=>/\d/.test(cell)) && row.join(" ").length<180).slice(0,16);
+        if (!cleanRows.length) {
+          const lines = bodyText.split(/\n+/).map(line=>line.replace(/\s+/g," ").trim()).filter(Boolean);
+          const start = lines.findIndex(line=>/clasificación/i.test(line));
+          const end = lines.findIndex((line,i)=>i>start && /enfrentamientos|plantilla|goles y disciplina/i.test(line));
+          const segment = start>=0 ? lines.slice(start+1,end>start?end:start+20) : [];
+          cleanRows = segment.filter(line=>/^(?:0|[1-9]|1[0-5])\s+/.test(line) && /\d/.test(line)).slice(0,16).map(line=>line.split(/\s{2,}|\s(?=\d+\s)/).filter(Boolean));
+        }
+        table.innerHTML = cleanRows.length ? `<div class="fcf-table-wrap"><table class="fcf-table"><tbody>${cleanRows.map(row=>`<tr>${row.slice(0,6).map(cell=>`<td>${escapeHTML(cell)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>` : '<p class="small-status">La fuente no entregó una tabla de clasificación legible en esta consulta.</p>';
+      }
+      const homeLabel = $("home-address-label");
+      if (homeLabel) homeLabel.textContent = "Travessera d’Aragó";
+      const pos = bodyText.match(/(\d{1,2})[º°]?\s*POSICIÓN/i);
+      const pts = bodyText.match(/(\d+)\s*PUNTOS/i);
+      status.textContent = `Datos recibidos de elFutbol · ${new Intl.DateTimeFormat("es-ES",{hour:"2-digit",minute:"2-digit"}).format(new Date())}${pos ? ` · Posición ${pos[1]}` : ""}${pts ? ` · ${pts[1]} puntos` : ""}. Verifica en FCF si el dato no aparece completo.`;
+      return {ok:Boolean(upcomingLink || teamRows.length || table?.innerHTML),message:"FCF: respuesta recibida, pero algunos campos podrían no haberse interpretado."};
+    } catch (error) {
+      status.textContent = `No se pudieron leer los datos automáticamente (${error.message || "fuente no disponible"}). El enlace oficial del Grup 14 sigue disponible.`;
+      if (feed) feed.innerHTML = '<p class="sports-copy">Consulta el calendario oficial del grupo.</p>';
+      if (table) table.innerHTML = "";
+      return {ok:false,message:"FCF: no se pudieron cargar calendario y clasificación."};
+    }
   }
 
   async function loadAll() {
