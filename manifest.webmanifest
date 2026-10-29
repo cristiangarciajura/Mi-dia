@@ -1,12 +1,19 @@
 {
-  "name": "Mi Día",
+  "name": "Mi Día · Panel personal",
   "short_name": "Mi Día",
-  "description": "Panel personal de tráfico, tiempo y fútbol",
+  "description": "Tu panel personal de tiempo, ruta, fútbol y recordatorios.",
+  "lang": "es-ES",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#101512",
-  "theme_color": "#101512",
-  "lang": "es",
-  "icons": [{"src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}]
+  "background_color": "#0b1511",
+  "theme_color": "#0b1511",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
 }
