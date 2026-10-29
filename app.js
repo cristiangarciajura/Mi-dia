@@ -114,31 +114,44 @@
 
   async function geocodeWork() {
     const cached = safeJSON(localStorage.getItem("mi-dia-work-coords"), null);
-    if (cached && Number.isFinite(cached.lat) && Number.isFinite(cached.lon)) return cached;
-    const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(WORK_QUERY)}`;
-    const response = await fetch(url, {headers:{"Accept":"application/json"}});
-    if (!response.ok) throw new Error("No se pudo localizar la dirección del trabajo.");
-    const items = await response.json();
-    if (!items.length) throw new Error("No se encontró la dirección para calcular la ruta.");
-    const coords = {lat:Number(items[0].lat),lon:Number(items[0].lon)};
-    localStorage.setItem("mi-dia-work-coords", JSON.stringify(coords));
-    return coords;
+    if (cached && Number.isFinite(cached.lat) && Number.isFinite(cached.lon) && cached.lat > 41.2 && cached.lat < 41.6 && cached.lon > 1.7 && cached.lon < 2.4) return cached;
+    const queries = [WORK_QUERY, "Ctra. Reial 120B, 08960 Sant Just Desvern, Barcelona, Spain", "Ernesto Ventos Sant Just Desvern"];
+    let lastError = null;
+    for (const query of queries) {
+      try {
+        const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(query)}`;
+        const response = await fetch(url, {headers:{"Accept":"application/json"},cache:"no-store"});
+        if (!response.ok) throw new Error("El servicio de mapas no ha respondido.");
+        const items = await response.json();
+        if (!items.length) continue;
+        const coords = {lat:Number(items[0].lat),lon:Number(items[0].lon)};
+        if (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lon)) continue;
+        localStorage.setItem("mi-dia-work-coords", JSON.stringify(coords));
+        return coords;
+      } catch (error) { lastError = error; }
+    }
+    throw new Error(lastError?.message || "No se encontró la dirección exacta del trabajo. Revisa la dirección o abre Google Maps.");
+  }
+  async function getRoadRoute(from, to) {
+    const coords = `${from.lon},${from.lat};${to.lon},${to.lat}`;
+    const response = await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=false`, {cache:"no-store"});
+    if (!response.ok) throw new Error("El servicio de rutas no ha respondido.");
+    const data = await response.json();
+    if (data.code !== "Ok" || !data.routes?.length) throw new Error("No se encontró una ruta por carretera.");
+    return data.routes[0];
   }
   async function loadTraffic() {
     const work = await geocodeWork();
-    const coords = `${HOME.lon},${HOME.lat};${work.lon},${work.lat}`;
-    const response = await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=false`, {cache:"no-store"});
-    if (!response.ok) throw new Error("No se pudo consultar la ruta por carretera.");
-    const data = await response.json();
-    if (data.code !== "Ok" || !data.routes?.length) throw new Error("No se encontró una ruta por carretera.");
-    const route = data.routes[0];
-    $("drive-time").textContent = fmtDuration(route.duration);
-    $("drive-distance").textContent = `${(route.distance / 1000).toFixed(1)} km por carretera`;
-    $("return-time").textContent = fmtDuration(route.duration);
-    $("return-distance").textContent = `${(route.distance / 1000).toFixed(1)} km por carretera`;
-    $("summary-route").textContent = fmtDuration(route.duration);
-    $("summary-route-foot").textContent = `${(route.distance / 1000).toFixed(1)} km · sin retenciones`;
-    $("traffic-status").textContent = "Ruta calculada con OSRM/OpenStreetMap. La vuelta usa la misma estimación base; no incluye tráfico en tiempo real.";
+    const [outbound, inbound] = await Promise.all([getRoadRoute(HOME, work), getRoadRoute(work, HOME)]);
+    $("drive-time").textContent = fmtDuration(outbound.duration);
+    $("drive-distance").textContent = `${(outbound.distance / 1000).toFixed(1)} km por carretera`;
+    $("return-time").textContent = fmtDuration(inbound.duration);
+    $("return-distance").textContent = `${(inbound.distance / 1000).toFixed(1)} km por carretera`;
+    $("summary-route").textContent = fmtDuration(outbound.duration);
+    $("summary-route-foot").textContent = `${(outbound.distance / 1000).toFixed(1)} km · sin retenciones`;
+    const stamp = new Intl.DateTimeFormat("es-ES",{hour:"2-digit",minute:"2-digit"}).format(new Date());
+    $("traffic-status").textContent = `Ruta recalculada a las ${stamp} con OSRM/OpenStreetMap. Ida y vuelta se calculan por separado; no incluye tráfico en tiempo real.`;
+    return {ok:true};
   }
 
   function loadNotes() { const value = safeJSON(localStorage.getItem(NOTES_KEY), null); if (Array.isArray(value)) return value; const old = safeJSON(localStorage.getItem("mi-dia-notes"), []); return Array.isArray(old) ? old.map((text, i) => ({id:`old-${Date.now()}-${i}`,text:String(text),done:false,created:Date.now()})) : []; }
@@ -206,53 +219,100 @@
   }
 
 
-  async function loadClubSchedule(teamId, targetId, label) {
+  function ymd(date) {
+    return `${date.getFullYear()}${String(date.getMonth()+1).padStart(2,"0")}${String(date.getDate()).padStart(2,"0")}`;
+  }
+  function clubMatch(event, clubKey) {
+    const competition = event.competitions?.[0] || {};
+    const competitors = competition.competitors || [];
+    const home = competitors.find(c => c.homeAway === "home") || competitors[0];
+    const away = competitors.find(c => c.homeAway === "away") || competitors[1];
+    if (!home || !away) return null;
+    const homeName = home.team?.displayName || home.team?.name || "Local";
+    const awayName = away.team?.displayName || away.team?.name || "Visitante";
+    const names = `${homeName} ${awayName} ${event.name || ""}`.toLocaleLowerCase("es");
+    const isMadrid = /real madrid/.test(names);
+    const isEspanyol = /espanyol/.test(names);
+    if (clubKey === "madrid" ? !isMadrid : !isEspanyol) return null;
+    return {event, competition, home, away, homeName, awayName};
+  }
+  async function fetchScoreboard(league, from, to) {
+    const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/${league}/scoreboard?dates=${from}-${to}&limit=1000&region=es&lang=es`;
+    const response = await fetch(url, {cache:"no-store"});
+    if (!response.ok) throw new Error(`Calendario ${league} no disponible (${response.status}).`);
+    const data = await response.json();
+    return Array.isArray(data.events) ? data.events : [];
+  }
+  async function loadClubSchedule(targetId, clubKey) {
     const target = $(targetId);
-    const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/esp.1/teams/${teamId}/schedule?region=es&lang=es`;
+    target.innerHTML = '<p class="sports-copy">Actualizando calendario…</p>';
+    const now = new Date();
+    const future = new Date(now); future.setDate(future.getDate()+100);
+    const from = ymd(now), to = ymd(future);
     try {
-      const response = await fetch(url, {cache:"no-store"});
-      if (!response.ok) throw new Error("Calendario externo no disponible");
-      const data = await response.json();
-      const events = Array.isArray(data.events) ? data.events : [];
-      const now = Date.now();
-      const upcoming = events.filter(e => e.date && new Date(e.date).getTime() >= now).sort((a,b)=>new Date(a.date)-new Date(b.date)).slice(0,3);
-      const results = events.filter(e => e.date && new Date(e.date).getTime() < now && e.competitions?.[0]?.status?.type?.completed).sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,1);
-      if (!upcoming.length && !results.length) throw new Error("No hay calendario legible");
-      const dateText = date => new Intl.DateTimeFormat("es-ES",{weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}).format(new Date(date));
-      const eventLine = (event, isResult=false) => {
-        const competition = event.competitions?.[0] || {};
-        const competitors = competition.competitors || [];
-        const home = competitors.find(c=>c.homeAway === "home") || competitors[0];
-        const away = competitors.find(c=>c.homeAway === "away") || competitors[1];
-        if (!home || !away) return "";
-        const homeName = home.team?.displayName || home.team?.name || "Local";
-        const awayName = away.team?.displayName || away.team?.name || "Visitante";
-        const status = competition.status?.type?.detail || competition.status?.type?.shortDetail || "";
-        const score = isResult && home.score != null && away.score != null ? `<span class="fixture-mini-result">${escapeHTML(home.score)}–${escapeHTML(away.score)}</span>` : "";
-        return `<div class="fixture-mini"><div class="fixture-mini-date">${escapeHTML(dateText(event.date))}</div><div class="fixture-mini-info"><strong>${escapeHTML(homeName)} – ${escapeHTML(awayName)}</strong><span>${escapeHTML(event.name || label)}${status ? " · " + escapeHTML(status) : ""}</span>${score}</div></div>`;
+      const leagues = clubKey === "madrid" ? ["esp.1", "uefa.champions"] : ["esp.1"];
+      const responses = await Promise.allSettled(leagues.map(league => fetchScoreboard(league, from, to)));
+      const events = responses.filter(r=>r.status==="fulfilled").flatMap(r=>r.value);
+      if (!events.length) throw new Error("No se han recibido calendarios de las fuentes deportivas.");
+      const unique = new Map();
+      events.forEach(e => { if (e.id) unique.set(e.id, e); });
+      const allEvents = [...unique.values()];
+      const upcoming = allEvents.filter(e => e.date && new Date(e.date).getTime() >= Date.now()-60*60*1000)
+        .map(e => clubMatch(e, clubKey)).filter(Boolean)
+        .sort((a,b)=>new Date(a.event.date)-new Date(b.event.date)).slice(0,2);
+      const results = allEvents.filter(e=>e.date && new Date(e.date).getTime()<Date.now() && e.competitions?.[0]?.status?.type?.completed)
+        .map(e=>clubMatch(e,clubKey)).filter(Boolean).sort((a,b)=>new Date(b.event.date)-new Date(a.event.date)).slice(0,1);
+      if (!upcoming.length && !results.length) throw new Error("No encontramos partidos del equipo en el periodo consultado.");
+      const dateText = date => new Intl.DateTimeFormat("es-ES",{weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit",timeZone:"Europe/Madrid"}).format(new Date(date));
+      const render = (match, result=false) => {
+        const {event,competition,home,away,homeName,awayName}=match;
+        const compName = competition?.name || event.league?.name || "Fútbol";
+        const score = result && home.score != null && away.score != null ? `<span class="fixture-mini-result">${escapeHTML(home.score)}–${escapeHTML(away.score)}</span>` : "";
+        return `<div class="fixture-mini"><div class="fixture-mini-date">${escapeHTML(dateText(event.date))}</div><div class="fixture-mini-info"><strong>${escapeHTML(homeName)} – ${escapeHTML(awayName)}</strong><span>${escapeHTML(compName)}</span>${score}</div></div>`;
       };
-      target.innerHTML = upcoming.map(e=>eventLine(e,false)).join("") || '<p class="sports-copy">No se han encontrado próximos partidos en la fuente automática.</p>';
-      if (results.length) target.insertAdjacentHTML("beforeend", `<div class="small-status">Último resultado: ${eventLine(results[0],true)}</div>`);
-    } catch (_) {
-      target.innerHTML = `<p class="sports-copy">No se ha podido cargar el calendario automáticamente ahora mismo. Usa los enlaces oficiales de abajo.</p>`;
+      target.innerHTML = upcoming.length ? upcoming.map(m=>render(m)).join("") : '<p class="sports-copy">No aparecen más partidos futuros en el periodo consultado.</p>';
+      if (results.length) target.insertAdjacentHTML("beforeend", `<div class="small-status">Último resultado: ${render(results[0],true)}</div>`);
+      if (responses.some(r=>r.status==="rejected")) target.insertAdjacentHTML("beforeend", '<p class="small-status">Aviso: una competición no respondió; el calendario puede estar incompleto.</p>');
+      return {ok:true, count:upcoming.length};
+    } catch (error) {
+      target.innerHTML = `<p class="sports-copy">No se ha podido actualizar automáticamente: ${escapeHTML(error.message || "error de conexión")}</p><p class="small-status">Consulta los calendarios oficiales enlazados debajo.</p>`;
+      return {ok:false, error:error.message || "Error al consultar fútbol"};
     }
   }
 
-  function loadFootball() {
-    // Public ESPN schedule endpoints: if unavailable, the official club calendar links remain visible.
-    loadClubSchedule("86", "madrid-fixtures", "Real Madrid · LaLiga");
-    loadClubSchedule("80", "espanyol-fixtures", "RCD Espanyol · LaLiga");
+  async function loadFootball() {
+    const results = await Promise.all([loadClubSchedule("madrid-fixtures", "madrid"), loadClubSchedule("espanyol-fixtures", "espanyol")]);
+    const ok = results.filter(r=>r.ok).length;
+    return {ok:ok===2, message:`Fútbol: ${ok}/2 calendarios actualizados.`};
+  }
+
+  async function loadFCF() {
+    const status = $("fcf-data-status");
+    if (!status) return {ok:false, message:"FCF: panel no disponible."};
+    status.textContent = "Consultando la competición FCF…";
+    // The FCF competition page is the source of truth, but its public site does not
+    // currently expose a browser-accessible JSON endpoint that can be verified here.
+    // Never fabricate a fixture or table when the official data cannot be retrieved.
+    status.textContent = "El enlace directo al Grup 14 está disponible abajo. La lectura automática de calendario y clasificación todavía no está conectada: la FCF no expone aquí una fuente de datos que hayamos podido verificar desde una web estática.";
+    return {ok:false, message:"FCF: calendario y clasificación enlazados, pero aún no se pueden leer automáticamente dentro de la app."};
   }
 
   async function loadAll() {
+    if ($("refresh").disabled) return;
     $("refresh").disabled = true;
     $("refresh").classList.add("is-loading");
-    setStatus("Actualizando meteorología y ruta…");
-    const results = await Promise.allSettled([loadWeather(),loadTraffic()]);
-    const errors = results.filter(r => r.status === "rejected").map(r => r.reason?.message || "Error desconocido");
+    setStatus("Actualizando tiempo, ruta y fútbol…");
+    const jobs = await Promise.allSettled([loadWeather(), loadTraffic(), loadFootball(), loadFCF()]);
+    const names = ["Tiempo", "Ruta", "Fútbol", "FCF"];
+    const failures = [];
+    jobs.forEach((result, i) => {
+      if (result.status === "rejected") failures.push(`${names[i]}: ${result.reason?.message || "error"}`);
+      else if (result.value?.ok === false) failures.push(result.value.message || `${names[i]}: sin datos actualizados`);
+    });
     const stamp = new Intl.DateTimeFormat("es-ES",{hour:"2-digit",minute:"2-digit"}).format(new Date());
-    setStatus(errors.length ? `Actualización ${stamp}. ${errors.join(" ")}` : `Todo actualizado a las ${stamp}.`);
-    if (errors.length) $("traffic-status").textContent = errors.join(" ");
+    setStatus(failures.length ? `Consulta finalizada a las ${stamp}. ${failures.join(" · ")}` : `Todo actualizado a las ${stamp}.`);
+    if (jobs[1].status === "rejected") $("traffic-status").textContent = jobs[1].reason?.message || "No se pudo calcular la ruta.";
+    if (jobs[1].status === "fulfilled" && jobs[1].value?.ok === false) $("traffic-status").textContent = jobs[1].value.message;
     $("refresh").disabled = false;
     $("refresh").classList.remove("is-loading");
   }
@@ -263,7 +323,6 @@
   initTheme();
   initRainAlerts();
   initNotes();
-  loadFootball();
   loadAll();
   $("summary-football").textContent = "FCF";
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
