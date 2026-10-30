@@ -1,4 +1,4 @@
-# Mi Día V6.3 — reparación del motor de actualización
+# Mi Día V6.4 — reparación del motor de actualización
 
 ## Archivos
 Sube estos seis archivos a la raíz del repositorio GitHub Pages y sustituye los anteriores: `index.html`, `styles.css`, `app.js`, `manifest.webmanifest`, `sw.js`, `icon.svg`.
