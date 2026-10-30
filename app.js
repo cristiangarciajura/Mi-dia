@@ -4,13 +4,17 @@
   const HOME_QUERY = "Travessera d'Aragó, Sant Vicenç dels Horts, Barcelona, Spain";
   const HOME_CACHE_KEY = "mi-dia-home-coords-travessera-arago-v1";
   const WORK_QUERY = "Ernesto Ventos SA, Ctra. Reial 120B, 08960 Sant Just Desvern, Barcelona, Spain";
-  const WEATHER_URL = `https://api.open-meteo.com/v1/forecast?latitude=${HOME.lat}&longitude=${HOME.lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,wind_speed_10m&hourly=temperature_2m,precipitation_probability,precipitation,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max&forecast_days=2&timezone=Europe%2FMadrid`;
+  const FCF_URL = "https://www.fcf.cat/ca/competicio?temporadaId=22&disciplinaId=19308233&competicioId=58780268&grupId=60210831&jornada=5";
+  const APP_VERSION = "6.3.0";
+  const WEATHER_FIELDS = "current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,wind_speed_10m&hourly=temperature_2m,precipitation_probability,precipitation,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max&forecast_days=2&timezone=Europe%2FMadrid";
   const NOTES_KEY = "mi-dia-v6-notes";
   const RAIN_KEY = "mi-dia-rain-alerts-v1"; // Keep existing V5/V5.1 rain preference compatibility.
   const THEME_KEY = "mi-dia-v6-theme";
   const WX = {0:["Despejado","☀"],1:["Mayormente despejado","🌤"],2:["Parcialmente nuboso","⛅"],3:["Nublado","☁"],45:["Niebla","🌫"],48:["Niebla","🌫"],51:["Llovizna ligera","🌦"],53:["Llovizna","🌦"],55:["Llovizna intensa","🌧"],56:["Llovizna helada","🌧"],57:["Llovizna helada","🌧"],61:["Lluvia ligera","🌦"],63:["Lluvia moderada","🌧"],65:["Lluvia intensa","🌧"],66:["Lluvia helada","🌧"],67:["Lluvia helada","🌧"],71:["Nieve ligera","🌨"],73:["Nieve moderada","🌨"],75:["Nieve intensa","❄"],77:["Granos de nieve","🌨"],80:["Chubascos ligeros","🌦"],81:["Chubascos moderados","🌧"],82:["Chubascos fuertes","⛈"],85:["Chubascos de nieve","🌨"],86:["Chubascos de nieve fuertes","🌨"],95:["Tormenta","⛈"],96:["Tormenta con granizo","⛈"],99:["Tormenta fuerte con granizo","⛈"]};
   let toastTimer = null;
   let lastWeatherData = null;
+  let homeGeocodePromise = null;
+  let workGeocodePromise = null;
 
   function safeJSON(value, fallback) { try { return JSON.parse(value); } catch (_) { return fallback; } }
   function escapeHTML(value) { return String(value).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
@@ -40,9 +44,24 @@
     });
   }
 
+  async function fetchTimed(url, options = {}, timeoutMs = 14000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try { return await fetch(url, {...options, signal:controller.signal, cache:"no-store"}); }
+    finally { clearTimeout(timer); }
+  }
+  async function fetchRetry(url, options = {}, attempts = 2) {
+    let lastError;
+    for (let i=0;i<attempts;i++) {
+      try { const response = await fetchTimed(url, options); if (!response.ok) throw new Error(`HTTP ${response.status}`); return response; }
+      catch (error) { lastError = error; if (i+1<attempts) await new Promise(resolve=>setTimeout(resolve,500*(i+1))); }
+    }
+    throw lastError || new Error("No se pudo completar la consulta.");
+  }
   async function loadWeather() {
-    const response = await fetch(WEATHER_URL, {cache:"no-store"});
-    if (!response.ok) throw new Error("No se pudo consultar la previsión meteorológica.");
+    const home = await geocodeHome();
+    const weatherURL = `https://api.open-meteo.com/v1/forecast?latitude=${home.lat}&longitude=${home.lon}&${WEATHER_FIELDS}`;
+    const response = await fetchRetry(weatherURL, {headers:{"Accept":"application/json"}}, 3);
     const data = await response.json();
     if (!data.current || !data.daily || !data.hourly) throw new Error("La previsión recibida está incompleta.");
     lastWeatherData = data;
@@ -120,7 +139,7 @@
     for (const search of [query, ...variants]) {
       try {
         const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(search)}`;
-        const response = await fetch(url, {headers:{"Accept":"application/json"},cache:"no-store"});
+        const response = await fetchRetry(url, {headers:{"Accept":"application/json"}}, 2);
         if (!response.ok) throw new Error("El servicio de mapas no ha respondido.");
         const items = await response.json();
         if (!items.length) continue;
@@ -132,16 +151,20 @@
     }
     throw new Error(lastError?.message || `No se encontró la dirección: ${query}`);
   }
-  async function geocodeHome() {
-    return geocodeAddress(HOME_QUERY, HOME_CACHE_KEY, ["Travessera d'Aragó, Sant Vicenç dels Horts, Barcelona, Spain", "Travessera d'Aragó, Sant Vicenç dels Horts"]);
+  function geocodeHome() {
+    if (!homeGeocodePromise) homeGeocodePromise = geocodeAddress(HOME_QUERY, HOME_CACHE_KEY, ["Travessera d'Aragó, Sant Vicenç dels Horts, Barcelona, Spain", "Travessera d'Aragó, Sant Vicenç dels Horts"]).catch(() => {
+      // Approximate fallback at Sant Vicenç; never pretend it is the exact street/door.
+      return {lat:41.3933921,lon:2.0099830,label:"Sant Vicenç dels Horts (punto aproximado; geocodificación no disponible)",approximate:true};
+    });
+    return homeGeocodePromise;
   }
-  async function geocodeWork() {
-    return geocodeAddress(WORK_QUERY, "mi-dia-work-coords-v2", ["Ctra. Reial 120B, 08960 Sant Just Desvern, Barcelona, Spain", "Ernesto Ventos Sant Just Desvern"]);
+  function geocodeWork() {
+    if (!workGeocodePromise) workGeocodePromise = geocodeAddress(WORK_QUERY, "mi-dia-work-coords-v2", ["Ctra. Reial 120B, 08960 Sant Just Desvern, Barcelona, Spain", "Ernesto Ventos Sant Just Desvern"]);
+    return workGeocodePromise;
   }
   async function getRoadRoute(from, to) {
     const coords = `${from.lon},${from.lat};${to.lon},${to.lat}`;
-    const response = await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=false`, {cache:"no-store"});
-    if (!response.ok) throw new Error("El servicio de rutas no ha respondido.");
+    const response = await fetchRetry(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=false`, {headers:{"Accept":"application/json"}}, 3);
     const data = await response.json();
     if (data.code !== "Ok" || !data.routes?.length) throw new Error("No se encontró una ruta por carretera.");
     return data.routes[0];
@@ -156,7 +179,7 @@
     $("summary-route").textContent = fmtDuration(outbound.duration);
     $("summary-route-foot").textContent = `${(outbound.distance / 1000).toFixed(1)} km · sin retenciones`;
     const stamp = new Intl.DateTimeFormat("es-ES",{hour:"2-digit",minute:"2-digit"}).format(new Date());
-    $("traffic-status").textContent = `Ruta recalculada a las ${stamp} desde ${home.label || HOME_QUERY}. Ida y vuelta por separado; sin tráfico en tiempo real. Si falta el número de portal, el origen puede ser aproximado.`;
+    $("traffic-status").textContent = `Ruta recalculada a las ${stamp} desde ${home.label || HOME_QUERY}. Ida y vuelta por separado; sin tráfico en tiempo real.`;
     return {ok:true};
   }
 
@@ -244,18 +267,16 @@
   }
   async function fetchScoreboard(league, from, to) {
     const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/${league}/scoreboard?dates=${from}-${to}&limit=1000&region=es&lang=es`;
-    const response = await fetch(url, {cache:"no-store"});
-    if (!response.ok) throw new Error(`Calendario ${league} no disponible (${response.status}).`);
+    const response = await fetchRetry(url, {headers:{"Accept":"application/json"}}, 3);
     const data = await response.json();
     return Array.isArray(data.events) ? data.events : [];
   }
   async function fetchHTMLWithFallback(url) {
     let lastError;
-    const candidates = [url, `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`];
+    const candidates = [url, `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`, `https://corsproxy.io/?url=${encodeURIComponent(url)}`];
     for (const candidate of candidates) {
       try {
-        const response = await fetch(candidate, {cache:"no-store"});
-        if (!response.ok) throw new Error(`Fuente no disponible (${response.status}).`);
+        const response = await fetchRetry(candidate, {headers:{"Accept":"text/html,application/xhtml+xml,*/*"}}, 2);
         const html = await response.text();
         if (html && html.length > 300) return html;
       } catch (error) { lastError = error; }
@@ -341,13 +362,16 @@
     const table = $("fcf-standings");
     if (!status) return {ok:false,message:"FCF: panel no disponible."};
     status.textContent = "Consultando el calendario y la clasificación del Grup 14…";
-    const url = "https://elfutbol.co/es/team/pa-barc-sant-vicenc-horts-cadet-s15-a?season=2627&tab=detalles";
+    const url = FCF_URL;
     try {
-      const html = await fetchHTMLWithFallback(url);
+      let html;
+      try { html = await fetchHTMLWithFallback(url); }
+      catch (_) { html = await fetchHTMLWithFallback("https://elfutbol.co/es/team/pa-barc-sant-vicenc-horts-cadet-s15-a?season=2627&tab=detalles"); }
       const doc = new DOMParser().parseFromString(html,"text/html");
       const bodyText = (doc.body?.innerText || doc.body?.textContent || "").replace(/\r/g,"");
       const rows = [...doc.querySelectorAll("table tr")].map(row=>[...row.querySelectorAll("th,td")].map(cell=>(cell.innerText||cell.textContent||"").replace(/\s+/g," ").trim()).filter(Boolean)).filter(row=>row.length>=3);
       const teamRows = rows.filter(row=>row.join(" ").toLocaleLowerCase("es").includes("barc") || row.join(" ").toLocaleLowerCase("es").includes("sant vicenç"));
+      let cleanRows = [];
       const matchLinks = [...doc.querySelectorAll('a[href*="/match/"]')];
       const upcomingLink = matchLinks.find(a=>/Pª Barc|Sant Vicenç/i.test((a.innerText||a.textContent||"") + " " + (a.parentElement?.innerText||"")));
       if (feed && upcomingLink) {
@@ -359,7 +383,7 @@
         feed.innerHTML = `<p class="sports-copy">${escapeHTML(next?.[0] || "No se pudo interpretar el próximo partido; abre el calendario del grupo.")}</p>`;
       }
       if (table) {
-        let cleanRows = rows.filter(row=>row.length>=3 && row.some(cell=>/\d/.test(cell)) && row.join(" ").length<180).slice(0,16);
+        cleanRows = rows.filter(row=>row.length>=3 && row.some(cell=>/\d/.test(cell)) && row.join(" ").length<180).slice(0,16);
         if (!cleanRows.length) {
           const lines = bodyText.split(/\n+/).map(line=>line.replace(/\s+/g," ").trim()).filter(Boolean);
           const start = lines.findIndex(line=>/clasificación/i.test(line));
@@ -373,8 +397,9 @@
       if (homeLabel) homeLabel.textContent = "Travessera d’Aragó";
       const pos = bodyText.match(/(\d{1,2})[º°]?\s*POSICIÓN/i);
       const pts = bodyText.match(/(\d+)\s*PUNTOS/i);
-      status.textContent = `Datos recibidos de elFutbol · ${new Intl.DateTimeFormat("es-ES",{hour:"2-digit",minute:"2-digit"}).format(new Date())}${pos ? ` · Posición ${pos[1]}` : ""}${pts ? ` · ${pts[1]} puntos` : ""}. Verifica en FCF si el dato no aparece completo.`;
-      return {ok:Boolean(upcomingLink || teamRows.length || table?.innerHTML),message:"FCF: respuesta recibida, pero algunos campos podrían no haberse interpretado."};
+      status.textContent = `Consulta ${new Intl.DateTimeFormat("es-ES",{hour:"2-digit",minute:"2-digit"}).format(new Date())} · Fuente: ${url.includes("fcf.cat") ? "FCF" : "elFutbol"}${pos ? ` · Posición ${pos[1]}` : ""}${pts ? ` · ${pts[1]} puntos` : ""}.`;
+      const hasUsefulData = Boolean(upcomingLink || teamRows.length || cleanRows.length);
+      return {ok:hasUsefulData,message:hasUsefulData ? "" : "FCF: la página respondió, pero no se reconocieron calendario ni clasificación."};
     } catch (error) {
       status.textContent = `No se pudieron leer los datos automáticamente (${error.message || "fuente no disponible"}). El enlace oficial del Grup 14 sigue disponible.`;
       if (feed) feed.innerHTML = '<p class="sports-copy">Consulta el calendario oficial del grupo.</p>';
@@ -384,23 +409,25 @@
   }
 
   async function loadAll() {
-    if ($("refresh").disabled) return;
-    $("refresh").disabled = true;
-    $("refresh").classList.add("is-loading");
-    setStatus("Actualizando tiempo, ruta y fútbol…");
-    const jobs = await Promise.allSettled([loadWeather(), loadTraffic(), loadFootball(), loadFCF()]);
-    const names = ["Tiempo", "Ruta", "Fútbol", "FCF"];
-    const failures = [];
-    jobs.forEach((result, i) => {
-      if (result.status === "rejected") failures.push(`${names[i]}: ${result.reason?.message || "error"}`);
-      else if (result.value?.ok === false) failures.push(result.value.message || `${names[i]}: sin datos actualizados`);
-    });
+    const button = $("refresh");
+    if (button.disabled) return;
+    button.disabled = true; button.classList.add("is-loading");
+    setStatus("Actualizando cada servicio por separado…");
+    const tasks = [
+      ["Tiempo", () => loadWeather(), "weather-updated"],
+      ["Ruta", () => loadTraffic(), "traffic-status"],
+      ["Madrid y Espanyol", () => loadFootball(), null],
+      ["FCF", () => loadFCF(), "fcf-data-status"]
+    ];
+    const outcomes = await Promise.all(tasks.map(async ([name, fn]) => {
+      try { const value = await fn(); return {name, ok:value?.ok !== false, message:value?.message || ""}; }
+      catch (error) { return {name, ok:false, message:error?.name === "AbortError" ? "tiempo de espera agotado" : (error?.message || "error de conexión")}; }
+    }));
     const stamp = new Intl.DateTimeFormat("es-ES",{hour:"2-digit",minute:"2-digit"}).format(new Date());
-    setStatus(failures.length ? `Consulta finalizada a las ${stamp}. ${failures.join(" · ")}` : `Todo actualizado a las ${stamp}.`);
-    if (jobs[1].status === "rejected") $("traffic-status").textContent = jobs[1].reason?.message || "No se pudo calcular la ruta.";
-    if (jobs[1].status === "fulfilled" && jobs[1].value?.ok === false) $("traffic-status").textContent = jobs[1].value.message;
-    $("refresh").disabled = false;
-    $("refresh").classList.remove("is-loading");
+    const failed = outcomes.filter(x=>!x.ok);
+    setStatus(failed.length ? `Actualización ${stamp}: ${outcomes.filter(x=>x.ok).length}/${outcomes.length} servicios correctos. ${failed.map(x=>`${x.name}: ${x.message}`).join(" · ")}` : `Todos los servicios respondieron correctamente a las ${stamp}.`);
+    button.disabled = false; button.classList.remove("is-loading");
+    return outcomes;
   }
 
   $("refresh").addEventListener("click", loadAll);
@@ -412,6 +439,11 @@
   loadAll();
   $("summary-football").textContent = "FCF";
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-    window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(() => {}));
+    window.addEventListener("load", async () => {
+      try {
+        const registration = await navigator.serviceWorker.register("./sw.js", {updateViaCache:"none"});
+        await registration.update();
+      } catch (error) { console.warn("Mi Día: no se pudo comprobar la actualización de la app", error); }
+    });
   }
 })();
