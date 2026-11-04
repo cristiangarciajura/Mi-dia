@@ -23,7 +23,7 @@ jobs:
           python-version: "3.12"
 
       - name: Actualizar calendarios
-        run: python scripts/actualizar-calendarios.py
+        run: python scripts/update_sports.py
 
       - name: Guardar resultados
         uses: stefanzweifel/git-auto-commit-action@v5
