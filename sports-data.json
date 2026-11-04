@@ -1,8 +1,18 @@
 {
-  "updatedAt": null,
+  "updatedAt": "2026-11-04T17:24:47.401645+00:00",
   "teams": {
-    "madrid": {"fixtures": [], "message": "El calendario se actualizará cuando se ejecute GitHub Actions."},
-    "espanyol": {"fixtures": [], "message": "El calendario se actualizará cuando se ejecute GitHub Actions."}
+    "madrid": {
+      "fixtures": [],
+      "message": "esp.1: HTTP Error 400: Bad Request; uefa.champions: HTTP Error 400: Bad Request"
+    },
+    "espanyol": {
+      "fixtures": [],
+      "message": "esp.1: HTTP Error 400: Bad Request"
+    }
   },
-  "fcf": {"fixtures": [], "standings": [], "status": "Pendiente de consulta automática."}
+  "fcf": {
+    "fixtures": [],
+    "standings": [],
+    "status": "La FCF respondió, pero su página no publicó filas legibles (puede cargar datos dinámicamente)."
+  }
 }
