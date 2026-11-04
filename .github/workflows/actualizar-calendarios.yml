@@ -1,10 +1,9 @@
-
 name: Actualizar calendarios deportivos
 
-on:
+'on':
   workflow_dispatch:
   schedule:
-    - cron: "0 */6 * * *"
+    - cron: '0 */6 * * *'
 
 permissions:
   contents: write
@@ -20,7 +19,7 @@ jobs:
       - name: Preparar Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: '3.12'
 
       - name: Actualizar calendarios
         run: python scripts/update_sports.py
@@ -28,6 +27,5 @@ jobs:
       - name: Guardar resultados
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "Actualizar calendarios deportivos"
+          commit_message: 'Actualizar calendarios deportivos'
           file_pattern: sports-data.json
-          
