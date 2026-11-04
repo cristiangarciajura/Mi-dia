@@ -5,7 +5,7 @@
   const HOME_CACHE_KEY = "mi-dia-home-coords-travessera-arago-v1";
   const WORK_QUERY = "Ernesto Ventos SA, Ctra. Reial 120B, 08960 Sant Just Desvern, Barcelona, Spain";
   const FCF_URL = "https://www.fcf.cat/ca/competicio?temporadaId=22&disciplinaId=19308233&competicioId=58780268&grupId=60210831&jornada=5";
-  const APP_VERSION = "6.4.0";
+  const APP_VERSION = "7.0.0";
   const WEATHER_FIELDS = "current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,wind_speed_10m&hourly=temperature_2m,precipitation_probability,precipitation,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max&forecast_days=2&timezone=Europe%2FMadrid";
   const NOTES_KEY = "mi-dia-v6-notes";
   const RAIN_KEY = "mi-dia-rain-alerts-v1"; // Keep existing V5/V5.1 rain preference compatibility.
@@ -248,168 +248,75 @@
   }
 
 
-  function ymd(date) {
-    return `${date.getFullYear()}${String(date.getMonth()+1).padStart(2,"0")}${String(date.getDate()).padStart(2,"0")}`;
+  const SPORTS_DATA_URL = `./sports-data.json?v=${Date.now()}`;
+  const SPORTS_CACHE_KEY = "mi-dia-sports-last-good-v1";
+  const TEAM_LABELS = {madrid:"Real Madrid",espanyol:"RCD Espanyol"};
+  function dateLabel(value, withTime=true) {
+    const d=new Date(value);
+    if(Number.isNaN(d.getTime())) return "Fecha por confirmar";
+    return new Intl.DateTimeFormat("es-ES",{weekday:"short",day:"numeric",month:"short",...(withTime?{hour:"2-digit",minute:"2-digit"}:{}),timeZone:"Europe/Madrid"}).format(d);
   }
-  function clubMatch(event, clubKey) {
-    const competition = event.competitions?.[0] || {};
-    const competitors = competition.competitors || [];
-    const home = competitors.find(c => c.homeAway === "home") || competitors[0];
-    const away = competitors.find(c => c.homeAway === "away") || competitors[1];
-    if (!home || !away) return null;
-    const homeName = home.team?.displayName || home.team?.name || "Local";
-    const awayName = away.team?.displayName || away.team?.name || "Visitante";
-    const names = `${homeName} ${awayName} ${event.name || ""}`.toLocaleLowerCase("es");
-    const isMadrid = /real madrid/.test(names);
-    const isEspanyol = /espanyol/.test(names);
-    if (clubKey === "madrid" ? !isMadrid : !isEspanyol) return null;
-    return {event, competition, home, away, homeName, awayName};
+  function readSportsCache(){ try{return JSON.parse(localStorage.getItem(SPORTS_CACHE_KEY)||"null");}catch(_){return null;} }
+  function saveSportsCache(data){ try{localStorage.setItem(SPORTS_CACHE_KEY,JSON.stringify(data));}catch(_){} }
+  async function readSportsData(){
+    const response=await fetch(SPORTS_DATA_URL,{cache:"no-store",headers:{"Accept":"application/json"}});
+    if(!response.ok) throw new Error(`sports-data.json: HTTP ${response.status}`);
+    const data=await response.json();
+    if(!data || !data.teams || !data.updatedAt) throw new Error("El archivo de resultados no tiene el formato esperado");
+    saveSportsCache(data); return data;
   }
-  async function fetchScoreboard(league, from, to) {
-    const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/${league}/scoreboard?dates=${from}-${to}&limit=1000&region=es&lang=es`;
-    const candidates = [url, `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`, `https://corsproxy.io/?url=${encodeURIComponent(url)}`];
-    let lastError;
-    for (const candidate of candidates) {
-      try {
-        const response = await fetchRetry(candidate, {headers:{"Accept":"application/json"}}, 2);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await response.json();
-        if (Array.isArray(data.events)) return data.events;
-        throw new Error("Respuesta JSON sin eventos");
-      } catch (error) { lastError = error; }
+  function renderFixtures(target,fixtures,emptyText){
+    if(!target)return;
+    if(!Array.isArray(fixtures)||!fixtures.length){target.innerHTML=`<p class="sports-copy">${escapeHTML(emptyText||"No hay próximos partidos publicados.")}</p>`;return;}
+    target.innerHTML=fixtures.slice(0,3).map(f=>{
+      const score=f.homeScore!==null&&f.homeScore!==undefined&&f.awayScore!==null&&f.awayScore!==undefined?`<span class="fixture-mini-result">${escapeHTML(f.homeScore)}–${escapeHTML(f.awayScore)}</span>`:"";
+      return `<div class="fixture-mini"><div class="fixture-mini-date">${escapeHTML(dateLabel(f.date))}</div><div class="fixture-mini-info"><strong>${escapeHTML(f.home||"Local")} – ${escapeHTML(f.away||"Visitante")}</strong><span>${escapeHTML(f.competition||"Fútbol")}</span>${score}</div></div>`;
+    }).join("");
+  }
+  function showSportsData(data,fromCache=false){
+    for(const key of ["madrid","espanyol"]){
+      const entry=data.teams?.[key]||{};
+      renderFixtures($(key==="madrid"?"madrid-fixtures":"espanyol-fixtures"),entry.fixtures,entry.message||"Todavía no hay partidos disponibles.");
     }
-    throw lastError || new Error("ESPN no disponible");
-  }
-  async function fetchHTMLWithFallback(url) {
-    let lastError;
-    const candidates = [url, `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`, `https://corsproxy.io/?url=${encodeURIComponent(url)}`];
-    for (const candidate of candidates) {
-      try {
-        const response = await fetchRetry(candidate, {headers:{"Accept":"text/html,application/xhtml+xml,*/*"}}, 2);
-        const html = await response.text();
-        if (html && html.length > 300) return html;
-      } catch (error) { lastError = error; }
+    const fcf=data.fcf||{};
+    const feed=$("fcf-fixtures-feed"), status=$("fcf-data-status"), table=$("fcf-standings");
+    if(feed){
+      if(fcf.fixtures?.length){
+        feed.innerHTML=fcf.fixtures.slice(0,3).map(f=>`<div class="fixture-mini"><div class="fixture-mini-date">${escapeHTML(dateLabel(f.date))}</div><div class="fixture-mini-info"><strong>${escapeHTML(f.display||`${f.home||"Local"} – ${f.away||"Visitante"}`)}</strong><span>Cadete S15 · Segona Divisió · Grup 14</span></div></div>`).join("");
+      } else feed.innerHTML=`<p class="sports-copy">${escapeHTML(fcf.message||"No hay jornadas verificadas en la fuente automática.")} <a href="${FCF_URL}" target="_blank" rel="noopener">Abrir FCF ↗</a></p>`;
     }
-    throw lastError || new Error("No se pudo leer la fuente externa.");
-  }
-  function parseLaLigaFixtures(html, clubKey) {
-    const doc = new DOMParser().parseFromString(html, "text/html");
-    const now = Date.now();
-    const rows = [...doc.querySelectorAll("table tr, article, li, [class*=match], [class*=fixture]")];
-    const texts = rows.map(row => (row.innerText || row.textContent || "").replace(/\s+/g," ").trim()).filter(Boolean);
-    texts.push((doc.body?.innerText || doc.body?.textContent || "").replace(/\s+/g," "));
-    const matches = [];
-    const seen = new Set();
-    for (const text of texts) {
-      if (!(clubKey === "madrid" ? /real madrid/i.test(text) : /espanyol/i.test(text))) continue;
-      const dateMatch = text.match(/(\d{1,2})[.\/ -](\d{1,2})[.\/ -](20\d{2})/);
-      if (!dateMatch) continue;
-      const date = new Date(Number(dateMatch[3]), Number(dateMatch[2])-1, Number(dateMatch[1]), 23, 59, 59);
-      if (date.getTime() < now - 60*60*1000) continue;
-      const clean = text.slice(0,240);
-      const key = `${date.toISOString().slice(0,10)}-${clean}`;
-      if (!seen.has(key)) { seen.add(key); matches.push({date, text:clean, competition:"LaLiga"}); }
+    if(table){
+      if(fcf.standings?.length){
+        table.innerHTML=`<div class="fcf-table-wrap"><table class="fcf-table"><tbody>${fcf.standings.map((r,i)=>`<tr><td>${escapeHTML(r.position??i+1)}</td><td>${escapeHTML(r.team||"")}</td><td>${escapeHTML(r.points??"")}</td></tr>`).join("")}</tbody></table></div>`;
+      }else table.innerHTML='<p class="small-status">Clasificación no disponible en la última consulta.</p>';
     }
-    return matches.sort((a,b)=>a.date-b.date).slice(0,2);
-  }
-  async function loadClubSchedule(targetId, clubKey) {
-    const target = $(targetId);
-    target.innerHTML = '<p class="sports-copy">Actualizando calendario…</p>';
-    const now = new Date();
-    const future = new Date(now); future.setDate(future.getDate()+240);
-    const from = ymd(now), to = ymd(future);
-    const officialUrl = clubKey === "madrid" ? "https://www.laliga.com/clubes/real-madrid/proximos-partidos" : "https://www.laliga.com/clubes/rcd-espanyol/proximos-partidos";
-    const leagues = clubKey === "madrid" ? ["esp.1", "uefa.champions"] : ["esp.1"];
-    const errors = [];
-    let partialUpcoming = [];
-    try {
-      const responses = await Promise.allSettled(leagues.map(league => fetchScoreboard(league, from, to)));
-      const events = responses.filter(r=>r.status==="fulfilled").flatMap(r=>r.value);
-      const unique = new Map(); events.forEach(e => { if (e.id) unique.set(e.id, e); });
-      const allEvents = [...unique.values()];
-      const upcoming = allEvents.filter(e => e.date && new Date(e.date).getTime() >= Date.now()-60*60*1000)
-        .map(e => clubMatch(e, clubKey)).filter(Boolean)
-        .sort((a,b)=>new Date(a.event.date)-new Date(b.event.date)).slice(0,2);
-      partialUpcoming = upcoming;
-      const results = allEvents.filter(e=>e.date && new Date(e.date).getTime()<Date.now() && e.competitions?.[0]?.status?.type?.completed)
-        .map(e=>clubMatch(e,clubKey)).filter(Boolean).sort((a,b)=>new Date(b.event.date)-new Date(a.event.date)).slice(0,1);
-      if (upcoming.length >= 2) {
-        const dateText = date => new Intl.DateTimeFormat("es-ES",{weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit",timeZone:"Europe/Madrid"}).format(new Date(date));
-        const render = (match, result=false) => { const {event,competition,home,away,homeName,awayName}=match; const compName=competition?.name||event.league?.name||"Fútbol"; const score=result&&home.score!=null&&away.score!=null?`<span class="fixture-mini-result">${escapeHTML(home.score)}–${escapeHTML(away.score)}</span>`:""; return `<div class="fixture-mini"><div class="fixture-mini-date">${escapeHTML(dateText(event.date))}</div><div class="fixture-mini-info"><strong>${escapeHTML(homeName)} – ${escapeHTML(awayName)}</strong><span>${escapeHTML(compName)}</span>${score}</div></div>`; };
-        target.innerHTML = upcoming.map(m=>render(m)).join("");
-        if (results.length) target.insertAdjacentHTML("beforeend", `<div class="small-status">Último resultado: ${render(results[0],true)}</div>`);
-        if (responses.some(r=>r.status==="rejected")) target.insertAdjacentHTML("beforeend", '<p class="small-status">Un calendario secundario no respondió; revisa también el calendario oficial.</p>');
-        return {ok:true,count:upcoming.length};
-      }
-      errors.push("ESPN no devolvió próximos partidos");
-    } catch (error) { errors.push(error.message || "ESPN no disponible"); }
-    try {
-      const html = await fetchHTMLWithFallback(officialUrl);
-      const matches = parseLaLigaFixtures(html, clubKey);
-      if (matches.length) {
-        target.innerHTML = matches.map(match => `<div class="fixture-mini"><div class="fixture-mini-date">${escapeHTML(new Intl.DateTimeFormat("es-ES",{weekday:"short",day:"numeric",month:"short",timeZone:"Europe/Madrid"}).format(match.date))}</div><div class="fixture-mini-info"><strong>${escapeHTML(match.text)}</strong><span>LaLiga · calendario oficial</span></div></div>`).join("");
-        return {ok:true,count:matches.length};
-      }
-      errors.push("el calendario oficial no se pudo interpretar automáticamente");
-    } catch (error) { errors.push(error.message || "LaLiga no disponible"); }
-    if (partialUpcoming.length) {
-      const dateText = date => new Intl.DateTimeFormat("es-ES",{weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit",timeZone:"Europe/Madrid"}).format(new Date(date));
-      target.innerHTML = partialUpcoming.map(match=>`<div class="fixture-mini"><div class="fixture-mini-date">${escapeHTML(dateText(match.event.date))}</div><div class="fixture-mini-info"><strong>${escapeHTML(match.homeName)} – ${escapeHTML(match.awayName)}</strong><span>${escapeHTML(match.competition?.name || "Fútbol")}</span></div></div>`).join("") + `<p class="small-status">Solo se pudo confirmar ${partialUpcoming.length} partido(s). ${escapeHTML(errors.join("; "))}</p>`;
-      return {ok:false,message:`${clubKey === "madrid" ? "Real Madrid" : "Espanyol"}: solo se ha podido cargar una parte del calendario.`};
+    if(status){
+      const stamp=data.updatedAt?new Intl.DateTimeFormat("es-ES",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit",timeZone:"Europe/Madrid"}).format(new Date(data.updatedAt)):"—";
+      status.textContent=`${fromCache?"Últimos datos guardados":"Datos generados"}: ${stamp}. ${fcf.status||""}`;
     }
-    target.innerHTML = `<p class="sports-copy">No se han podido cargar los partidos en esta consulta.</p><p class="small-status">Fuentes consultadas: ESPN y calendario oficial de LaLiga. ${escapeHTML(errors.join("; "))}</p>`;
-    return {ok:false,message:`${clubKey === "madrid" ? "Real Madrid" : "Espanyol"}: fuentes de calendario no disponibles.`};
   }
-  async function loadFootball() {
-    const results = await Promise.all([loadClubSchedule("madrid-fixtures", "madrid"), loadClubSchedule("espanyol-fixtures", "espanyol")]);
-    const ok = results.filter(r=>r.ok).length;
-    return {ok:ok===2,message:`Fútbol: ${ok}/2 calendarios actualizados.`};
-  }
-
-  async function loadFCF() {
-    const status = $("fcf-data-status"), feed = $("fcf-fixtures-feed"), table = $("fcf-standings");
-    if (!status) return {ok:false,message:"FCF: panel no disponible."};
-    status.textContent = "Consultando calendario y clasificación del Grup 14…";
-    const sources = [
-      {url:"https://elfutbol.co/es/team/pa-barc-sant-vicenc-horts-cadet-s15-a?season=2627&tab=detalles",name:"elFutbol · 2026–27"},
-      {url:FCF_URL,name:"FCF"}
-    ];
-    let lastError = "";
-    for (const source of sources) {
-      try {
-        const html = await fetchHTMLWithFallback(source.url);
-        const doc = new DOMParser().parseFromString(html,"text/html");
-        const bodyText = (doc.body?.innerText || doc.body?.textContent || "").replace(/\r/g,"");
-        const normalized = bodyText.replace(/\s+/g," ");
-        const isRightTeam = /Pª\s*Barc\.?\s*Sant Vicenç Horts|Penya Barcelonista Sant Vicenç/i.test(normalized);
-        if (!isRightTeam) throw new Error("La fuente no corresponde al equipo Pª Barc. Sant Vicenç Horts A");
-        const upcoming = normalized.match(/Próximo partido[^·]{0,40}·?\s*J?\d*\s*(.{0,180}?)(?=Mejor partido|history|Resultados recientes|Clasificación)/i);
-        const matchText = upcoming?.[1]?.trim();
-        if (feed) {
-          const matchUrl = source.url;
-          feed.innerHTML = matchText
-            ? `<div class="fixture-mini"><div class="fixture-mini-date">Próximo partido · Temporada 2026–27</div><div class="fixture-mini-info"><strong>${escapeHTML(matchText.slice(0,180))}</strong><span>Cadete S15 · Segona Divisió · Grup 14</span><a href="${escapeHTML(matchUrl)}" target="_blank" rel="noopener">Ver calendario y ficha ↗</a></div></div>`
-            : `<p class="sports-copy">No se ha podido extraer el próximo partido. <a href="${escapeHTML(matchUrl)}" target="_blank" rel="noopener">Abrir calendario del equipo ↗</a></p>`;
-        }
-        if (table) {
-          const lines = bodyText.split(/\n+/).map(x=>x.replace(/\s+/g," ").trim()).filter(Boolean);
-          const start = lines.findIndex(x=>/^Pos\s*[|]?\s*Equipo/i.test(x) || /^Clasificación$/i.test(x));
-          const candidates = start>=0 ? lines.slice(start+1,start+22) : [];
-          const standings = candidates.filter(x=>/^\d{1,2}\s+/.test(x) && /\d/.test(x));
-          table.innerHTML = standings.length
-            ? `<div class="fcf-table-wrap"><table class="fcf-table"><tbody>${standings.map(line=>`<tr>${line.split(/\s{2,}|\s(?=\d+\s)/).slice(0,6).map(cell=>`<td>${escapeHTML(cell)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`
-            : '<p class="small-status">Calendario localizado; la clasificación aún no está disponible o no se ha podido interpretar.</p>';
-        }
-        status.textContent = `Actualizado · Fuente: ${source.name}. Solo datos de la temporada 2026–27.`;
-        const useful = Boolean(matchText || /Clasificación/.test(bodyText));
-        if (useful) return {ok:true,message:""};
-        lastError = "La página respondió, pero no contenía datos reconocibles.";
-      } catch (error) { lastError = error.message || "Fuente no disponible"; }
+  async function loadFootball(){
+    try{
+      const data=await readSportsData(); showSportsData(data,false);
+      const good=["madrid","espanyol"].filter(k=>data.teams?.[k]?.fixtures?.length).length;
+      return {ok:good===2,message:`Fútbol: ${good}/2 calendarios con datos.`};
+    }catch(error){
+      const cached=readSportsCache();
+      if(cached){showSportsData(cached,true);return {ok:false,message:"Fútbol: se muestran los últimos datos guardados; no se pudo descargar la actualización."};}
+      for(const id of ["madrid-fixtures","espanyol-fixtures"]){const el=$(id);if(el)el.innerHTML=`<p class="sports-copy">No se ha podido leer el archivo de partidos. ${escapeHTML(error.message)}</p><p class="small-status">Comprueba que GitHub Actions haya generado <code>sports-data.json</code>.</p>`;}
+      return {ok:false,message:"Fútbol: falta sports-data.json o no se ha podido leer."};
     }
-    status.textContent = `No se han podido leer los datos automáticamente: ${lastError}.`;
-    if (feed) feed.innerHTML = `<p class="sports-copy"><a href="${escapeHTML(FCF_URL)}" target="_blank" rel="noopener">Abrir competición oficial de la FCF ↗</a></p>`;
-    if (table) table.innerHTML = '<p class="small-status">No se muestra una clasificación para evitar datos de otra temporada o equipo.</p>';
-    return {ok:false,message:"FCF: no se pudo interpretar el calendario del equipo."};
+  }
+  async function loadFCF(){
+    try{
+      const data=await readSportsData(); showSportsData(data,false);
+      return {ok:Boolean(data.fcf?.fixtures?.length),message:data.fcf?.status||"FCF: sin jornadas verificadas."};
+    }catch(error){
+      const cached=readSportsCache();
+      if(cached){showSportsData(cached,true);return {ok:false,message:"FCF: se muestran los últimos datos guardados."};}
+      const status=$("fcf-data-status");if(status)status.textContent="No se pudo leer sports-data.json. Comprueba GitHub Actions.";
+      return {ok:false,message:"FCF: no hay archivo de datos actualizado."};
+    }
   }
 
   async function loadAll() {

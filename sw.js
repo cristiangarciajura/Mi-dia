@@ -1,5 +1,5 @@
-/* Mi Día V6.4 — network-first for app shell, cache fallback only offline. */
-const CACHE_NAME = "mi-dia-v6-4-shell";
+/* Mi Día V7.0 — network-first for app shell, cache fallback only offline. */
+const CACHE_NAME = "mi-dia-v7-shell";
 const APP_SHELL = ["./", "./index.html", "./styles.css", "./app.js", "./manifest.webmanifest", "./icon.svg"];
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL)).then(() => self.skipWaiting()));

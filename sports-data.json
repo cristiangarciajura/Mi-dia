@@ -1,0 +1,8 @@
+{
+  "updatedAt": null,
+  "teams": {
+    "madrid": {"fixtures": [], "message": "El calendario se actualizará cuando se ejecute GitHub Actions."},
+    "espanyol": {"fixtures": [], "message": "El calendario se actualizará cuando se ejecute GitHub Actions."}
+  },
+  "fcf": {"fixtures": [], "standings": [], "status": "Pendiente de consulta automática."}
+}
