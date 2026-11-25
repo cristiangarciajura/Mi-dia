@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-11-25T07:36:14.338064+00:00",
+  "updatedAt": "2026-11-25T21:18:41.941538+00:00",
   "teams": {
     "madrid": {
       "fixtures": [],
@@ -13,6 +13,6 @@
   "fcf": {
     "fixtures": [],
     "standings": [],
-    "status": "No se pudo consultar la FCF: HTTP Error 403: Forbidden"
+    "status": "La FCF respondió, pero su página no publicó filas legibles (puede cargar datos dinámicamente)."
   }
 }
